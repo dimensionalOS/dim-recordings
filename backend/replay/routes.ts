@@ -207,7 +207,7 @@ export function replayRoutes({ library }: Services): Route[] {
             },
             handler: async ({ id, bins, exact, from, to }) => {
                 const recording = await find(String(id))
-                const slices = Math.max(10, Math.min(5000, Number(bins) || 1200))
+                const slices = Math.floor(Math.max(10, Math.min(5000, Number(bins) || 1200)))
                 const exactUpTo = Math.max(0, Math.min(20000, Number(exact ?? 2000)))
                 return await withSource(recording, async (source) => {
                     const all = await Promise.all(

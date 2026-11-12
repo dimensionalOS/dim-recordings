@@ -204,7 +204,12 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             },
             handler: async ({ id, name }) => {
                 const recording = await find(String(id))
-                const target = await renameRecording(recording.path, String(name))
+                let target: string
+                try {
+                    target = await renameRecording(recording.path, String(name))
+                } catch (error) {
+                    throw new HttpError(400, error instanceof Error ? error.message : String(error))
+                }
                 const newId = await library.idOf(target)
                 library.moveNote(recording.id, newId)
                 library.emit({ type: "recordings", reason: "rename", id: newId })

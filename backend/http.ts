@@ -113,7 +113,12 @@ export async function handle(request: Request, routes: Route[], info: Info): Pro
         return Response.json({ error: "see openapi.json" }, { status: 404 })
     }
     for (const route of routes) {
-        const pathParams = match(route, request.method, path)
+        let pathParams: Record<string, string> | null
+        try {
+            pathParams = match(route, request.method, path)
+        } catch {
+            return Response.json({ error: "the path isn't valid percent-encoding" }, { status: 400 })
+        }
         if (!pathParams) {
             continue
         }

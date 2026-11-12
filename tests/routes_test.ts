@@ -58,6 +58,9 @@ Deno.test("api: list → summary → note → rename → duplicate → delete", 
     assertEquals((await call("GET", "api/recordings/a.db")).status, 404)
     assertEquals((await call("POST", "api/recordings/b.db/convert", { to: "zip" })).status, 400)
     assertEquals((await call("POST", "api/recordings/..%2Fx.db/rename", { name: "y" })).status, 404)
+    // what the request got wrong is the client's error, not a 500: an id that isn't percent-encoding, a name with a path
+    assertEquals((await call("GET", "api/recordings/%E0%A4%A")).status, 400)
+    assertEquals((await call("POST", "api/recordings/b.db/rename", { name: "../c" })).status, 400)
     assert(await Deno.stat(join(dir, "b.db")))
 })
 

@@ -280,6 +280,12 @@ async function call<T>(
 
 const enc = encodeURIComponent
 
+/** a recording's note saves, one after another: an older one can't land after a newer one, and a rename waits for
+ * them, so the note it takes along is the newest (sent earlier, it left a save still on its way with no recording) */
+const noteSaves = new Map<string, Promise<unknown>>()
+const afterNoteSaves = <T>(id: string, work: () => Promise<T>): Promise<T> =>
+    (noteSaves.get(id) ?? Promise.resolve()).then(work, work)
+
 export const api = {
     listUrl: (sort: SortKey, order: Order, extraDirs: string[]) =>
         `api/recordings?sort=${sort}&order=${order}&tz=${new Date().getTimezoneOffset()}&extraDirs=${
@@ -292,8 +298,13 @@ export const api = {
             `api/recordings/${enc(id)}`,
         ),
     thumbnailUrl: (id: string, version: number) => `api/recordings/${enc(id)}/thumbnail?v=${version}`,
-    setNote: (id: string, text: string) => call("PUT", `api/recordings/${enc(id)}/note`, { text }),
-    rename: (id: string, name: string) => call<{ id: string }>("POST", `api/recordings/${enc(id)}/rename`, { name }),
+    setNote: (id: string, text: string) => {
+        const save = afterNoteSaves(id, () => call("PUT", `api/recordings/${enc(id)}/note`, { text }))
+        noteSaves.set(id, save)
+        return save
+    },
+    rename: (id: string, name: string) =>
+        afterNoteSaves(id, () => call<{ id: string }>("POST", `api/recordings/${enc(id)}/rename`, { name })),
     remove: (id: string) => call("DELETE", `api/recordings/${enc(id)}`),
     duplicate: (id: string) => call<{ id: string }>("POST", `api/recordings/${enc(id)}/duplicate`, {}),
     convert: (id: string, to: string) => call<Job>("POST", `api/recordings/${enc(id)}/convert`, { to }),

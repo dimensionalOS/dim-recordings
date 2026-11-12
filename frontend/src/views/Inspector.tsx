@@ -680,15 +680,16 @@ export function Inspector(
         }
     }, [recording.note])
 
-    const saveNote = (text: string) => {
+    const saveNote = (text: string, wait = 500) => {
         clearTimeout(noteTimer.current)
         setSaved("saving…")
         noteTimer.current = setTimeout(() => {
+            noteTimer.current = undefined
             api.setNote(recording.id, text).then(
                 () => setSaved("saved"),
                 (e) => setError(String(e.message ?? e)),
             )
-        }, 500)
+        }, wait)
     }
 
     const busy = upload?.state === "queued" || upload?.state === "uploading"
@@ -932,6 +933,8 @@ export function Inspector(
                                 setNote(text)
                                 saveNote(text)
                             }}
+                            // a save still waiting for more typing goes when the box loses focus (to a rename's prompt)
+                            onBlur={() => noteTimer.current !== undefined && saveNote(note, 0)}
                         />
                     </div>
                     {!inspection ? <Text small muted>{error ?? "reading…"}</Text> : warnings.length

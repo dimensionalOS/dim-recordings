@@ -187,6 +187,8 @@ Deno.test("source: an .mcap indexes from MessageIndex records and decompresses o
         assertEquals(first, pose(0))
         const middle = await source.read("odom", atOrBefore(times, T0 + 3.05))
         assertEquals(middle, pose(30))
+        // a message in the wrecked chunk is refused (its chunk's checksum no longer matches), not handed over
+        await assertRejects(() => source.read("odom", 99), Error, "checksum")
     } finally {
         source.close()
     }

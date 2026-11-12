@@ -10,6 +10,7 @@ import { shares } from "../recordings/budget.ts"
 import { idRange, openDb, pagesOfIds, quoteName } from "../recordings/sqlite.ts"
 import { channelType, formatOf, shortType } from "../recordings/inspect.ts"
 import type { DatabaseSync } from "node:sqlite"
+import { crc32 } from "node:zlib"
 
 export type Kind = "image" | "cloud" | "tf" | "pose" | "info" | "other"
 
@@ -453,6 +454,7 @@ class McapSource implements Source {
         // opcode u8, length u64, start u64, end u64, uncompressed size u64, crc u32, compression string, records u64 + bytes
         let at = 1 + 8 + 8 + 8
         const uncompressedSize = Number(view.getBigUint64(at, true))
+        const crc = view.getUint32(at + 8, true)
         at += 8 + 4
         const compressionLength = view.getUint32(at, true)
         at += 4 + compressionLength
@@ -468,6 +470,11 @@ class McapSource implements Source {
             records = new Uint8Array(lz4.decompress(body))
         } else {
             throw new Error(`unsupported chunk compression ${chunk.compression}`)
+        }
+        // its writer's checksum of the records (0: written without one, as this app's own edits are): a chunk that
+        // doesn't match is refused here, before it's kept or a message of it is sent as the recording's
+        if (crc !== 0 && crc32(records) !== crc) {
+            throw new Error(`this .mcap is damaged: chunk ${c} doesn't match its checksum`)
         }
         this.#cache.set(c, records)
         this.#cacheBytes += records.byteLength

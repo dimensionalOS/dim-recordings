@@ -8,7 +8,7 @@
 >
     <!-- dimOS app icon set v6: neon gradient glyph with a soft bloom, the logo's scan lines and a white-hot core; a cassette tape -->
     <defs>
-        <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" /></filter>
+        <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2" /></filter>
         <linearGradient id="a" gradientUnits="userSpaceOnUse" x1="0" y1="14" x2="0" y2="50"><stop
                 offset="0"
                 stop-color="#e6d4ff"
@@ -55,13 +55,13 @@
                 result="e"
             /><feGaussianBlur in="e" stdDeviation="0.45" result="eb" /><feFlood
                 flood-color="#fffaf0"
-                flood-opacity=".78"
+                flood-opacity=".24"
             /><feComposite in2="eb" operator="in" result="c" /><feMerge><feMergeNode in="SourceGraphic" /><feMergeNode
                     in="c"
                 /></feMerge></filter>
     </defs>
     <g transform="translate(32 32) scale(1.12) translate(-32 -32)">
-        <use href="#glyph" filter="url(#bloom)" />
+        <use href="#glyph" filter="url(#bloom)" opacity=".6" />
         <g mask="url(#scanlines)"><use href="#glyph" filter="url(#core)" /></g>
     </g>
 </svg>

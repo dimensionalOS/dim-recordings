@@ -10,6 +10,7 @@ import {
     Checkbox,
     Chip,
     ContextMenu,
+    copyText,
     EmptyState,
     IconButton,
     ListRow,
@@ -361,11 +362,23 @@ export function Library({ transfer = false }: { transfer?: boolean }) {
             }
         }, fail)
     }
-    const copyPath = (recording: Item) => {
-        navigator.clipboard.writeText(recording.path).then(
-            () => toast.ok("path copied"),
-            () => toast.info(recording.path),
-        )
+    // over plain http (a robot by IP) there's no navigator.clipboard; copyText falls back, and a failure shows the text
+    const copyPath = async (recording: Item) => {
+        if (await copyText(recording.path)) {
+            toast.ok("path copied")
+        } else {
+            toast.info(recording.path)
+        }
+    }
+    // a file manager only helps a page open on the machine with the files; elsewhere (a phone) say and copy the folder
+    const showInFolder = async (recording: Item) => {
+        if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) {
+            api.reveal(recording.id).then((r) => toast.ok(`showing it in ${r.folder}`), fail)
+            return
+        }
+        const folder = recording.path.slice(0, recording.path.lastIndexOf("/")) || "/"
+        const copied = await copyText(folder)
+        toast.info(`it's in ${folder} on ${location.hostname}${copied ? " (copied)" : ""}`)
     }
 
     const opensMenu = (recording: Item): MenuItem[] =>
@@ -412,7 +425,7 @@ export function Library({ transfer = false }: { transfer?: boolean }) {
         {
             label: "Show in folder",
             icon: "folder",
-            onSelect: () => api.reveal(recording.id).then(() => {}, fail),
+            onSelect: () => showInFolder(recording),
         },
     ]
 

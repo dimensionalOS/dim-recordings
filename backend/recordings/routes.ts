@@ -1,5 +1,5 @@
 // The recordings API: every action the page offers is one of these, so Desktop's agent can do the same things.
-import { dirname } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { HttpError, type Route } from "../http.ts"
 import { deleteRecording, duplicateRecording, renameRecording } from "./actions.ts"
 import { cancelJobsFor } from "./child_jobs.ts"
@@ -205,7 +205,7 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             handler: async ({ id, name }) => {
                 const recording = await find(String(id))
                 const target = await renameRecording(recording.path, String(name))
-                const newId = await library.idOf(target)
+                const newId = join(dirname(recording.id), basename(target))
                 library.moveNote(recording.id, newId)
                 library.emit({ type: "recordings", reason: "rename", id: newId })
                 return { ok: true, id: newId, path: target }
@@ -234,7 +234,7 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             handler: async ({ id, name }) => {
                 const recording = await find(String(id))
                 const target = await duplicateRecording(recording.path, name ? String(name) : undefined)
-                const newId = await library.idOf(target)
+                const newId = join(dirname(recording.id), basename(target))
                 library.emit({ type: "recordings", reason: "duplicate", id: newId })
                 thumbnails.poke()
                 return { ok: true, id: newId, path: target }

@@ -1,6 +1,6 @@
 // The app's view of the recordings folder: the file list joined with each file's inspection (cached in memory and on
 // disk under the app data dir, keyed by format + size + mtime), notes, thumbnails and what can open it.
-import { isAbsolute, join, relative } from "node:path"
+import { isAbsolute, join, resolve } from "node:path"
 import type { Config } from "../config.ts"
 import { inChild, JobCancelled, laneFor } from "./child_jobs.ts"
 import type { Inspection } from "./inspect.ts"
@@ -93,7 +93,7 @@ export class Library {
     }
 
     get dir() {
-        return this.config.recordingsDir
+        return resolve(this.config.recordingsDir)
     }
 
     path(id: string) {
@@ -106,21 +106,6 @@ export class Library {
         }
         this.extraDirs = dirs
         this.onExtraDirs(dirs.map(expandHome).filter((path) => isAbsolute(path)))
-    }
-
-    /** The id a file at `path` has (after a rename or duplicate), in the shared folder or one of the extra ones. */
-    async idOf(path: string): Promise<string> {
-        if (path.startsWith(`${this.dir}/`)) {
-            return path.slice(this.dir.length + 1)
-        }
-        for (const dir of this.extraDirs.map(expandHome)) {
-            for (const root of new Set([dir, await realOf(dir)])) {
-                if (path.startsWith(`${root}/`)) {
-                    return (await prefixOf(dir)) + relative(root, path)
-                }
-            }
-        }
-        return path.slice(this.dir.length + 1)
     }
 
     /** content identity without reading it: a rename keeps it, so a renamed (or cloned) file keeps its cache */

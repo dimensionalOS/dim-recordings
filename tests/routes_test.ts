@@ -6,7 +6,7 @@ import { buildRoutes, INFO } from "../backend/routes.ts"
 import { makeServices } from "../backend/services.ts"
 import { lcmTf, range, tempDir, writeDb } from "./fixtures.ts"
 
-async function app() {
+async function app(dirSuffix = "") {
     const dir = await tempDir()
     writeDb(join(dir, "a.db"), [
         {
@@ -17,7 +17,7 @@ async function app() {
         },
     ])
     const services = makeServices({
-        recordingsDir: dir,
+        recordingsDir: dir + dirSuffix,
         dataDir: await tempDir(),
         desktopUrl: "",
         appName: "dim-recordings",
@@ -82,6 +82,38 @@ Deno.test("api: an extra folder sent with the list: its rows, their actions by i
     const set = await call("PUT", "api/extra-dirs", { dirs: [] })
     assertEquals(set.body.extraDirs, [])
     assertEquals((await call("GET", `api/recordings/${encodeURIComponent(renamed.body.id)}`)).status, 404)
+})
+
+Deno.test("api: renaming a recording in a nested extra folder keeps its listed id", async () => {
+    const { call, dir } = await app()
+    const extra = join(dir, "runs")
+    await Deno.mkdir(join(extra, "today"), { recursive: true })
+    await Deno.copyFile(join(dir, "a.db"), join(extra, "today", "far.db"))
+    const query = encodeURIComponent(JSON.stringify([extra]))
+    const list = await call("GET", `api/recordings?extraDirs=${query}`)
+    const far = list.body.sections.flatMap((s: { recordings: { id: string; root?: string }[] }) => s.recordings)
+        .find((r: { root?: string }) => r.root === extra)
+    assert(far.id.startsWith(".extra/"))
+    const renamed = await call("POST", `api/recordings/${encodeURIComponent(far.id)}/rename`, { name: "near" })
+    assertEquals(renamed.body.id, far.id.replace("far.db", "near.db"))
+    assertEquals((await call("GET", `api/recordings/${encodeURIComponent(renamed.body.id)}`)).status, 200)
+})
+
+Deno.test("api: rename and duplicate return the listed ids for alternate spellings of the recordings folder", async () => {
+    for (const suffix of ["/", "/."]) {
+        const { dir, call } = await app(suffix)
+        await Deno.mkdir(join(dir, "take"))
+        await Deno.rename(join(dir, "a.db"), join(dir, "take", "a.db"))
+        const original = encodeURIComponent("take/a.db")
+        await call("PUT", `api/recordings/${original}/note`, { text: "stairs" })
+        const renamed = await call("POST", `api/recordings/${original}/rename`, { name: "walk" })
+        assertEquals(renamed.body.id, "take/walk.db")
+        const url = `api/recordings/${encodeURIComponent(renamed.body.id)}`
+        assertEquals((await call("GET", url)).body.note, "stairs")
+        const copy = await call("POST", `${url}/duplicate`, {})
+        assertEquals(copy.body.id, "take/walk copy.db")
+        assertEquals((await call("GET", `api/recordings/${encodeURIComponent(copy.body.id)}`)).status, 200)
+    }
 })
 
 Deno.test("api: openapi.json lists every route", async () => {

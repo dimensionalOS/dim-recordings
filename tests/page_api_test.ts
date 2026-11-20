@@ -1,28 +1,68 @@
-// The page's calls to the backend (frontend/src/api.ts): the order a recording's note saves and its rename go in.
-import { assertEquals } from "@std/assert"
+// A recording can be renamed from either menu while its Inspector is still saving a note.
+import { assertEquals, assertRejects } from "@std/assert"
 import { api } from "../frontend/src/api.ts"
 
-Deno.test("page api: a rename waits for the recording's note save still on its way", async () => {
-    const sent: string[] = []
-    let answer = () => {}
+Deno.test("page api: rename waits for the newest edit, even if an older save is refused", async () => {
+    const writes: string[] = []
+    const first = Promise.withResolvers<Response>()
+    const last = Promise.withResolvers<Response>()
+    const started = Promise.withResolvers<void>()
+    const status: string[] = []
     const realFetch = globalThis.fetch
-    globalThis.fetch = ((path: string, init: RequestInit) => {
-        sent.push(`${init.method} ${path}`)
-        return new Promise<Response>((resolve) => answer = () => resolve(Response.json({ id: "b.db" })))
-    }) as typeof fetch
-    const turn = () => new Promise((resolve) => setTimeout(resolve, 0))
+    globalThis.fetch = (path, init) => {
+        if (init?.method === "PUT") {
+            const { text } = JSON.parse(String(init.body))
+            writes.push(text)
+            if (text === "first") return first.promise
+            started.resolve()
+            return last.promise
+        }
+        writes.push(String(path))
+        return Promise.resolve(Response.json({ id: "new.db" }))
+    }
     try {
-        const saved = api.setNote("a.db", "the newest edit")
-        const renamed = api.rename("a.db", "b.db")
-        await turn()
-        // sent at once, the rename got there first and the save found no a.db: the edit was lost
-        assertEquals(sent, ["PUT api/recordings/a.db/note"])
-        answer()
-        await saved
-        await turn()
-        assertEquals(sent, ["PUT api/recordings/a.db/note", "POST api/recordings/a.db/rename"])
-        answer()
-        assertEquals(await renamed, { id: "b.db" })
+        // A rename during the typing delay starts the save. A newer edit queued while it is in flight wins.
+        api.setNote("run.db", "first", (value) => status.push(value))
+        assertEquals(writes, [])
+        const renamed = api.rename("run.db", "new")
+        assertEquals(writes, ["first"])
+        api.setNote("run.db", "latest", (value) => status.push(value))
+        await api.rename("other.db", "another") // independent recordings need not wait
+        first.resolve(Response.json({ error: "old write failed" }, { status: 503 }))
+        await started.promise
+        assertEquals(writes, ["first", "api/recordings/other.db/rename", "latest"])
+        last.resolve(Response.json({ ok: true }))
+        assertEquals(await renamed, { id: "new.db" })
+        assertEquals(writes.at(-1), "api/recordings/run.db/rename")
+        assertEquals(status.at(-1), "saved")
+    } finally {
+        first.resolve(Response.json({}))
+        last.resolve(Response.json({}))
+        globalThis.fetch = realFetch
+    }
+})
+
+Deno.test("page api: a refused note keeps its name and draft until the write succeeds", async () => {
+    const calls: string[] = []
+    const status: string[] = []
+    let refused = true
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (path, init) => {
+        calls.push(`${path} ${init?.body}`)
+        return Promise.resolve(refused ? Response.json({ error: "write failed" }, { status: 503 }) : Response.json({}))
+    }
+    try {
+        api.setNote("a.db", "", (value) => status.push(value)) // clearing a note is an edit too
+        await assertRejects(() => api.rename("a.db", "b"), Error, "write failed")
+        assertEquals(calls, ['api/recordings/a.db/note {"text":""}'])
+        assertEquals(status.at(-1), "failed – waiting for reconnect")
+        refused = false
+        await api.rename("a.db", "b")
+        assertEquals(calls.slice(1), [
+            'api/recordings/a.db/note {"text":""}',
+            'api/recordings/a.db/rename {"name":"b"}',
+        ])
+        assertEquals(status.at(-1), "saved")
     } finally {
         globalThis.fetch = realFetch
     }

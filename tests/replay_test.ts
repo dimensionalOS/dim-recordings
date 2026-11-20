@@ -14,7 +14,7 @@ import { atOrBefore, openSource, type Source } from "../backend/replay/source.ts
 import { handle } from "../backend/http.ts"
 import { buildRoutes, INFO } from "../backend/routes.ts"
 import { makeServices } from "../backend/services.ts"
-import { range, tempDir, writeDb } from "./fixtures.ts"
+import { range, tempDir, writeDb, writeMcap } from "./fixtures.ts"
 
 const T0 = 1_780_000_000
 
@@ -192,9 +192,7 @@ Deno.test("source: an .mcap indexes from MessageIndex records and decompresses o
     }
 })
 
-Deno.test("source: an .mcap chunk that fails its checksum still plays, and says it's damaged once", async () => {
-    const dir = await tempDir()
-    const path = await sampleMcap(dir)
+async function damageFirstChunk(path: string) {
     const mcap = await openMcap(path)
     const first = [...mcap.reader.chunkIndexes].sort((a, b) => Number(a.chunkStartOffset - b.chunkStartOffset))[0]
     mcap.close()
@@ -203,6 +201,12 @@ Deno.test("source: an .mcap chunk that fails its checksum still plays, and says 
     await file.seek(Number(first.chunkStartOffset) + 1 + 8 + 8 + 8 + 8, Deno.SeekMode.Start)
     await file.write(new Uint8Array([1, 2, 3, 4]))
     file.close()
+}
+
+Deno.test("source: an .mcap chunk that fails its checksum still plays, and says it's damaged once", async () => {
+    const dir = await tempDir()
+    const path = await sampleMcap(dir)
+    await damageFirstChunk(path)
     const source = await openSource(path)
     try {
         const told: string[] = []
@@ -214,6 +218,44 @@ Deno.test("source: an .mcap chunk that fails its checksum still plays, and says 
         assert(source.damaged!.includes("checksum"))
     } finally {
         source.close()
+    }
+})
+
+Deno.test("api: a new playback socket is warned when an earlier read found a damaged chunk", async () => {
+    const dir = await tempDir()
+    const path = join(dir, "run.mcap")
+    await writeMcap(path, [{ topic: "/x", encoding: "lcm", times: [T0] }])
+    await damageFirstChunk(path)
+    const routes = buildRoutes(
+        makeServices({ recordingsDir: dir, dataDir: await tempDir(), desktopUrl: "", appName: "dim-recordings" }),
+    )
+    const serve = async (request: Request) =>
+        (await handle(request, routes, INFO)) ?? new Response(null, { status: 404 })
+    const raw = await serve(new Request("http://app/api/replay/run.mcap/raw?stream=x&index=0"))
+    assertEquals(raw.status, 200)
+    assertEquals(new Uint8Array(await raw.arrayBuffer()), new Uint8Array([0]))
+
+    const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, serve)
+    const socket = new WebSocket(`ws://127.0.0.1:${server.addr.port}/api/replay/run.mcap/ws`)
+    const closed = new Promise<void>((resolve) => socket.onclose = () => resolve())
+    try {
+        // "done" is the reply to the first playhead. The cached warning must reach this page first.
+        const messages: string[] = []
+        await new Promise<void>((resolve, reject) => {
+            socket.onerror = () => reject(new Error("playback socket failed"))
+            socket.onopen = () => socket.send(JSON.stringify({ op: "at", t: T0, seq: 1, mode: "pause" }))
+            socket.onmessage = ({ data }) => {
+                const { op } = JSON.parse(data)
+                messages.push(op)
+                if (op === "done") resolve()
+            }
+        })
+        assertEquals(messages, ["damaged", "done"])
+    } finally {
+        socket.close()
+        await closed
+        await server.shutdown()
+        await closeAll()
     }
 })
 

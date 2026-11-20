@@ -3,6 +3,7 @@
 // when complete, so a half-copied recording never lists; the copy keeps the source's modified time, so its preview and
 // inspection (cached by format + size + mtime) come along. A .db's SQLite sidecars travel with it.
 import { basename, join } from "node:path"
+import { takenBy } from "./actions.ts"
 import { stem } from "./scan.ts"
 import { exists, fs, reachable } from "./slow_fs.ts"
 
@@ -13,7 +14,7 @@ const CHUNK = 8 << 20
 export async function uniqueTarget(dir: string, name: string): Promise<string> {
     const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : ""
     let candidate = join(dir, name)
-    for (let n = 2; await exists(candidate); n++) {
+    for (let n = 2; await takenBy(candidate); n++) {
         candidate = join(dir, `${stem(name)} ${n}${extension}`)
     }
     return candidate
@@ -115,6 +116,8 @@ export async function transferFile(
     const temporary = (part: string) => join(dir, `.${basename(target)}${part.slice(source.length)}.transferring`)
     let done = 0
     const cancel = options.cancel ?? (() => false)
+    /** what this import has put in place, to take back if a later part fails */
+    const published: string[] = []
     try {
         for (const part of parts) {
             await copyOne(part, temporary(part), (n) => {
@@ -127,16 +130,23 @@ export async function transferFile(
                 throw new Error(`${basename(part)} copied short`)
             }
         }
+        // a cancel that came after the last chunk (the flush can take a while) still counts: nothing is published yet
+        if (cancel()) {
+            throw new Error("cancelled")
+        }
         // the name was free when picked; take it now only if it still is
-        if (await exists(target)) {
+        if (await takenBy(target)) {
             throw new Error(`${basename(target)} appeared meanwhile`)
         }
-        for (const part of parts) {
-            await Deno.rename(temporary(part), target + part.slice(source.length))
+        // sidecars first, the .db last: it never lists (or is opened) without them
+        for (const part of [...parts].reverse()) {
+            const to = target + part.slice(source.length)
+            await Deno.rename(temporary(part), to)
+            published.push(to)
         }
     } catch (error) {
-        for (const part of parts) {
-            await Deno.remove(temporary(part)).catch(() => {})
+        for (const path of [...parts.map(temporary), ...published]) {
+            await Deno.remove(path).catch(() => {})
         }
         throw error
     }

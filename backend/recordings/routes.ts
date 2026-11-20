@@ -245,7 +245,7 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             path: "api/recordings/{id}/convert",
             description:
                 "Convert a .db or .mcap to another format with dtk (to = db | mcap | rrd); the new file lands next to it (an " +
-                ".rrd under the same name, so it lists with it). Returns a job; follow it with GET api/jobs/{job}",
+                ".rrd under the same name, so it lists with it). Returns a job; follow it with GET api/jobs/{job}. A busy destination returns 409",
             params: { ...ID, to: { type: "string", required: true, description: "db | mcap | rrd" } },
             handler: async ({ id, to }) => {
                 const recording = await find(String(id))

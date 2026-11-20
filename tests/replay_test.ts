@@ -812,7 +812,9 @@ Deno.test("api: raw gives a message's bytes as published, a .db's lz4 framing un
         404,
     )
     // a count is taken whole: a fractional bins was a 500 (Invalid array length)
-    assertEquals((await (await get("api/replay/meshes.db/timeline?bins=10.5"))!.json()).bins, 10)
+    const timeline = await (await get("api/replay/meshes.db/timeline?bins=10.9"))!.json()
+    assertEquals(timeline.bins, 10)
+    assertEquals(timeline.streams[0].counts.length, 10)
     await closeAll()
     await Deno.remove(dir, { recursive: true })
 })

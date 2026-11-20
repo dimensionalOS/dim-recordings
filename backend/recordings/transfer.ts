@@ -3,7 +3,7 @@
 // when complete, so a half-copied recording never lists; the copy keeps the source's modified time, so its preview and
 // inspection (cached by format + size + mtime) come along. A .db's SQLite sidecars travel with it.
 import { basename, join } from "node:path"
-import { takenBy } from "./actions.ts"
+import { cleanName, takenBy } from "./actions.ts"
 import { stem } from "./scan.ts"
 import { exists, fs, reachable } from "./slow_fs.ts"
 
@@ -101,6 +101,7 @@ export async function transferFile(
         cancel?: () => boolean
     },
 ): Promise<string> {
+    const name = options.name === undefined ? basename(source) : cleanName(options.name)
     const parts = await partsOf(source)
     const sizes = await Promise.all(parts.map(async (part) => (await fs.stat(part)).size))
     const total = sizes.reduce((a, b) => a + b, 0)
@@ -112,7 +113,7 @@ export async function transferFile(
             } GB free`,
         )
     }
-    const target = await uniqueTarget(dir, options.name ?? basename(source))
+    const target = await uniqueTarget(dir, name)
     const temporary = (part: string) => join(dir, `.${basename(target)}${part.slice(source.length)}.transferring`)
     let done = 0
     const cancel = options.cancel ?? (() => false)

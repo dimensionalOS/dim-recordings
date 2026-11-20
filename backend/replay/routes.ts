@@ -190,7 +190,7 @@ export function replayRoutes({ library }: Services): Route[] {
                 "each stream's message count per slice (ticks), plus its exact times when it has at most `exact` messages",
             params: {
                 ...ID,
-                bins: { type: "number", description: "slices (default 1200)" },
+                bins: { type: "number", description: "slices (10–5000, rounded down, default 1200)" },
                 exact: {
                     type: "number",
                     description:

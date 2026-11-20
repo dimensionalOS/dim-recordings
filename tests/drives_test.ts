@@ -181,6 +181,10 @@ Deno.test("transfer: copy keeps the mtime, never overwrites, move deletes the so
     const second = await transferFile(source, folder, { mode: "copy" })
     assertEquals(second, join(folder, "walk 2.mcap"))
     assertEquals(await uniqueTarget(folder, "walk.mcap"), join(folder, "walk 3.mcap"))
+    // a name with a SQLite sidecar left under it is taken too: SQLite would read it as the new file's
+    await Deno.writeTextFile(join(folder, "left.db-wal"), "")
+    assertEquals(await uniqueTarget(folder, "left.db"), join(folder, "left 2.db"))
+    await Deno.remove(join(folder, "left.db-wal"))
 
     // move: the copy, then the source goes; a .db's -wal comes along
     const db = join(stick, "drive.db")
@@ -192,6 +196,18 @@ Deno.test("transfer: copy keeps the mtime, never overwrites, move deletes the so
     await assertRejects(() => Deno.stat(db))
     await assertRejects(() => Deno.stat(`${db}-wal`))
     assert(Deno.statSync(source).isFile) // copies leave it
+
+    // a part that can't be put in place (a folder took its name meanwhile) takes the whole import back, so no .db
+    // lists without its sidecars; a move keeps its source
+    for (const suffix of ["", "-wal", "-shm"]) {
+        await Deno.writeTextFile(db + suffix, `drive.db${suffix}`)
+    }
+    const inTheWay = join(folder, "drive.db-wal")
+    await assertRejects(() =>
+        transferFile(db, folder, { mode: "move", onProgress: () => Deno.mkdirSync(inTheWay, { recursive: true }) })
+    )
+    await Deno.remove(inTheWay)
+    assert(Deno.statSync(db).isFile)
 
     // nothing half-written is left behind, and nothing hidden lists
     assertEquals([...Deno.readDirSync(folder)].map((e) => e.name).sort(), [
@@ -205,6 +221,21 @@ Deno.test("transfer: copy keeps the mtime, never overwrites, move deletes the so
     await assertRejects(() => transferFile(source, folder, { mode: "move", cancel: () => true }), Error, "cancelled")
     assert(Deno.statSync(source).isFile)
     assertEquals([...Deno.readDirSync(folder)].filter((e) => e.name.startsWith(".")), [])
+
+    // so does one that comes after the last byte, while the copy is flushed: nothing lands, and a move keeps its source
+    let late = false
+    await assertRejects(
+        () =>
+            transferFile(source, folder, {
+                mode: "move",
+                cancel: () => late,
+                onProgress: ({ done, total }) => done === total && queueMicrotask(() => late = true),
+            }),
+        Error,
+        "cancelled",
+    )
+    assert(Deno.statSync(source).isFile)
+    assertEquals(await uniqueTarget(folder, "walk.mcap"), join(folder, "walk 3.mcap"))
 })
 
 Deno.test("df: free and total from the POSIX output, on macOS and Linux", () => {

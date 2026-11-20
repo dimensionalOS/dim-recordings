@@ -264,11 +264,19 @@ export class Session {
         readonly send: (data: Uint8Array | string) => void,
     ) {
         sessions.add(this)
+        this.source.onDamaged?.add(this.#damaged)
+        if (this.source.damaged) {
+            this.#damaged(this.source.damaged)
+        }
     }
+
+    /** the page warns before playing on (op "damaged") */
+    #damaged = (why: string) => this.send(JSON.stringify({ op: "damaged", error: why }))
 
     close() {
         this.#closed = true
         sessions.delete(this)
+        this.source.onDamaged?.delete(this.#damaged)
     }
 
     /** the file is about to change: the page reconnects (and re-reads the stream list) */
@@ -284,6 +292,11 @@ export class Session {
         try {
             message = JSON.parse(text)
         } catch {
+            return
+        }
+        // JSON that isn't a command is ignored the same way: null, or a field that is an object (Number() and
+        // String() throw on one whose toString isn't a function, and an uncaught throw here ends the server)
+        if (!message || Object.values(message).some((value) => value && typeof value === "object")) {
             return
         }
         if (message.op === "sub") {

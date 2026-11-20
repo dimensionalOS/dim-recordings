@@ -192,6 +192,31 @@ Deno.test("source: an .mcap indexes from MessageIndex records and decompresses o
     }
 })
 
+Deno.test("source: an .mcap chunk that fails its checksum still plays, and says it's damaged once", async () => {
+    const dir = await tempDir()
+    const path = await sampleMcap(dir)
+    const mcap = await openMcap(path)
+    const first = [...mcap.reader.chunkIndexes].sort((a, b) => Number(a.chunkStartOffset - b.chunkStartOffset))[0]
+    mcap.close()
+    // the chunk's stored checksum (after opcode, length, start, end, uncompressed size), made wrong
+    const file = await Deno.open(path, { read: true, write: true })
+    await file.seek(Number(first.chunkStartOffset) + 1 + 8 + 8 + 8 + 8, Deno.SeekMode.Start)
+    await file.write(new Uint8Array([1, 2, 3, 4]))
+    file.close()
+    const source = await openSource(path)
+    try {
+        const told: string[] = []
+        source.onDamaged!.add((why) => told.push(why))
+        assertEquals(source.damaged, null)
+        assertEquals(await source.read("odom", 0), pose(0))
+        assertEquals(await source.read("odom", 1), pose(1))
+        assertEquals(told.length, 1)
+        assert(source.damaged!.includes("checksum"))
+    } finally {
+        source.close()
+    }
+})
+
 Deno.test("source: a dimos-layout .mcap (types in dimos.payload_type, codec as the encoding) reads like any other", async () => {
     const dir = await tempDir()
     const path = await sampleMcap(dir, "dimos")
@@ -397,6 +422,21 @@ Deno.test("player: a newer playhead cuts short the one being answered (a scrub g
         await Promise.all([playing, scrubbed])
         const odom = p.take().filter((m) => m.header.s === 2).map((m) => Math.round(((m.header.t as number) - T0) * 10))
         assertEquals(odom, [80], "odom at 4 s was never read: the play tick stopped for the scrub")
+    } finally {
+        p.close()
+    }
+})
+
+Deno.test("player: JSON that isn't a command (null, a field that is an object) is ignored, and the page is still answered", async () => {
+    const { path } = await sampleDb()
+    const p = await session(path)
+    try {
+        p.player.onText(JSON.stringify({ op: "sub", id: 2, stream: "odom", as: "lcm" }))
+        // each of these threw out of onText (the websocket's message handler), and the server exited
+        p.player.onText("null")
+        p.player.onText('{"op":"at","t":{"toString":0}}')
+        await p.at(T0 + 5, "pause")
+        assertEquals(p.take().map((m) => Math.round(((m.header.t as number) - T0) * 10)), [50])
     } finally {
         p.close()
     }

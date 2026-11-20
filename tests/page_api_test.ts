@@ -67,3 +67,21 @@ Deno.test("page api: a refused note keeps its name and draft until the write suc
         globalThis.fetch = realFetch
     }
 })
+
+Deno.test("page api: refreshing a note shows the other editor's save once the local draft is written", async () => {
+    const recording = { id: "shared.db", note: "first note" }
+    const written = Promise.withResolvers<Response>()
+    const realFetch = globalThis.fetch
+    globalThis.fetch = () => written.promise
+    try {
+        const save = api.setNote(recording.id, "")
+        assertEquals(api.noteText(recording), "") // refreshing while clearing the note keeps the edit
+        written.resolve(Response.json({ ok: true }))
+        await save
+        const refreshed = { ...recording, note: "second editor's note" }
+        assertEquals(api.noteText(refreshed), refreshed.note)
+    } finally {
+        written.resolve(Response.json({ ok: true }))
+        globalThis.fetch = realFetch
+    }
+})

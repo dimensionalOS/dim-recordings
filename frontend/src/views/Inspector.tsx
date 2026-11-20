@@ -642,7 +642,7 @@ export function Inspector(
     const [timeline, setTimeline] = useState<Timeline | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [tab, setTab] = useState<Tab>("streams")
-    const [note, setNote] = useState(recording.note)
+    const [note, setNote] = useState(() => api.noteText(recording))
     /** "saved", "saving…", or "failed – waiting for reconnect" */
     const [saved, setSaved] = useState<string | null>(null)
     useEffect(() => () => api.leaveNote(recording.id), [recording.id])
@@ -675,10 +675,8 @@ export function Inspector(
         }
     }, [recording.id, recording.modified, recording.inspected])
     useEffect(() => {
-        if (!saved) {
-            setNote(recording.note)
-        }
-    }, [recording.note])
+        setNote(api.noteText(recording))
+    }, [recording])
 
     const busy = upload?.state === "queued" || upload?.state === "uploading"
     const link = upload?.state === "done" ? upload.link : recording.uploaded?.link

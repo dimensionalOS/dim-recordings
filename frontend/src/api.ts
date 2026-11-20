@@ -341,6 +341,7 @@ export const api = {
             `api/recordings/${enc(id)}`,
         ),
     thumbnailUrl: (id: string, version: number) => `api/recordings/${enc(id)}/thumbnail?v=${version}`,
+    noteText: ({ id, note }: Pick<Recording, "id" | "note">) => notes.get(id)?.text ?? note,
     setNote: (id: string, text: string, status?: (message: string) => void) => {
         const draft = notes.get(id) ?? { text }
         notes.set(id, draft)

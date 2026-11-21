@@ -3,6 +3,7 @@
 // original (an .rrd keeps the original's base name, so it lists paired with it).
 import { dirname, join } from "node:path"
 import { stem } from "./scan.ts"
+import { tmpdir } from "node:os"
 
 export type Target = "db" | "mcap" | "rrd"
 
@@ -130,10 +131,16 @@ export class Jobs {
     }
 
     convert(
-        recording: { id: string; path: string; format: string; messages: number; streams: number },
+        recording: {
+            id: string
+            path: string
+            format: string
+            messages: number
+            streams: number
+            prepareImages?: boolean
+        },
         to: Target,
     ): Job {
-        const command = dtkCommand()
         if (recording.format === to || recording.format === "rrd") {
             throw new Error(`can't convert a .${recording.format} to .${to}`)
         }
@@ -142,7 +149,18 @@ export class Jobs {
             ? null
             : join(dirname(output), `.${output.slice(dirname(output).length + 1)}.partial`)
         const verb = { db: ["to_db", recording.path, partial!], mcap: ["to_mcap", recording.path, "-o", partial!] }
-        const args = to === "rrd" ? ["data", "to_rrd", recording.path, "--no-open"] : ["data", ...verb[to]]
+        // The packaged helper sits next to server.js, or next to this module in a checkout.
+        const scratch = to === "rrd" && recording.prepareImages !== false
+            ? join(tmpdir(), `recordings-rrd-${crypto.randomUUID()}`)
+            : null
+        const command = scratch
+            ? [Deno.execPath(), "run", "-A", "--no-config", new URL("./to_rrd.ts", import.meta.url).href]
+            : dtkCommand()
+        const args = scratch
+            ? [DTK_URL, recording.path, scratch, ...dtkCommand()]
+            : to === "rrd"
+            ? ["data", "to_rrd", recording.path, "--no-open"]
+            : ["data", ...verb[to]]
         const id = crypto.randomUUID().slice(0, 8)
         const job: Job & { process?: Deno.ChildProcess } = {
             id,
@@ -168,6 +186,7 @@ export class Jobs {
         }).spawn()
         job.process = process
         const seen = { streams: 0 }
+        if (scratch) process.status.then(() => Deno.remove(scratch, { recursive: true }).catch(() => {}))
         let lastStdout = ""
         const pump = async (stream: ReadableStream<Uint8Array>, isStdout: boolean) => {
             const decoder = new TextDecoder()

@@ -252,17 +252,13 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
                 if (!["db", "mcap", "rrd"].includes(String(to))) {
                     throw new HttpError(400, "to must be db, mcap or rrd")
                 }
-                try {
-                    return jobs.convert({
-                        id: recording.id,
-                        path: recording.path,
-                        format: recording.format,
-                        messages: recording.inspection?.messages ?? 0,
-                        streams: recording.inspection?.streams.filter((s) => s.count > 0).length ?? 0,
-                    }, String(to) as Target)
-                } catch (error) {
-                    throw new HttpError(400, error instanceof Error ? error.message : String(error))
-                }
+                return jobs.convert({
+                    id: recording.id,
+                    path: recording.path,
+                    format: recording.format,
+                    messages: recording.inspection?.messages ?? 0,
+                    streams: recording.inspection?.streams.filter((s) => s.count > 0).length ?? 0,
+                }, String(to) as Target)
             },
         },
         {

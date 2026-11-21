@@ -94,3 +94,19 @@ Deno.test("api: openapi.json lists every route", async () => {
         operations.every((o: { summary?: string; description?: string }) => (o.summary ?? o.description)!.length > 10),
     )
 })
+
+Deno.test("api: a converter that cannot start leaves no running job", async () => {
+    const { dir, call } = await app()
+    const previous = Deno.env.get("DIM_RECORDINGS_DTK")
+    Deno.env.set("DIM_RECORDINGS_DTK", join(dir, "missing-converter"))
+    try {
+        const refused = await call("POST", "api/recordings/a.db/convert", { to: "mcap" })
+        assertEquals((await call("GET", "api/jobs")).body.jobs, [])
+        assertEquals(refused.status, 500)
+        assert(refused.body.error.includes("missing-converter"))
+        assertEquals((await call("POST", "api/recordings/a.db/convert", { to: "db" })).status, 400)
+    } finally {
+        if (previous === undefined) Deno.env.delete("DIM_RECORDINGS_DTK")
+        else Deno.env.set("DIM_RECORDINGS_DTK", previous)
+    }
+})

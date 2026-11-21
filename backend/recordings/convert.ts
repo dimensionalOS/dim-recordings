@@ -2,6 +2,7 @@
 // progress from the converter's own output, the output's tail, the result's path. The new file lands next to the
 // original (an .rrd keeps the original's base name, so it lists paired with it).
 import { dirname, join } from "node:path"
+import { HttpError } from "../http.ts"
 import { stem } from "./scan.ts"
 
 export type Target = "db" | "mcap" | "rrd"
@@ -135,7 +136,7 @@ export class Jobs {
     ): Job {
         const command = dtkCommand()
         if (recording.format === to || recording.format === "rrd") {
-            throw new Error(`can't convert a .${recording.format} to .${to}`)
+            throw new HttpError(400, `can't convert a .${recording.format} to .${to}`)
         }
         const output = outputPath(recording.path, to)
         const partial = to === "rrd"
@@ -159,7 +160,6 @@ export class Jobs {
             started: Date.now() / 1000,
             finished: null,
         }
-        this.jobs.set(id, job)
         const process = new Deno.Command(command[0], {
             args: [...command.slice(1), ...args],
             stdout: "piped",
@@ -167,6 +167,7 @@ export class Jobs {
             env: { NO_COLOR: "1" },
         }).spawn()
         job.process = process
+        this.jobs.set(id, job)
         const seen = { streams: 0 }
         let lastStdout = ""
         const pump = async (stream: ReadableStream<Uint8Array>, isStdout: boolean) => {

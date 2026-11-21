@@ -1,5 +1,7 @@
 // The HTTP API end to end (no Desktop): list, summary, note, rename, duplicate, delete, the agent manifest.
 import { assert, assertEquals } from "@std/assert"
+import { DatabaseSync } from "node:sqlite"
+import { closeAll } from "../backend/replay/player.ts"
 import { join } from "node:path"
 import { handle } from "../backend/http.ts"
 import { buildRoutes, INFO } from "../backend/routes.ts"
@@ -59,6 +61,28 @@ Deno.test("api: list → summary → note → rename → duplicate → delete", 
     assertEquals((await call("POST", "api/recordings/b.db/convert", { to: "zip" })).status, 400)
     assertEquals((await call("POST", "api/recordings/..%2Fx.db/rename", { name: "y" })).status, 404)
     assert(await Deno.stat(join(dir, "b.db")))
+})
+
+Deno.test("api: fresh Inspector and Replay requests see a live WAL commit", async () => {
+    const { call, dir, services } = await app()
+    const writer = new DatabaseSync(join(dir, "a.db"))
+    try {
+        writer.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0")
+        for (const count of [11, 12]) {
+            writer.exec(
+                `BEGIN; INSERT INTO tf (ts) VALUES (${
+                    1_780_000_000 + count
+                }); INSERT INTO tf_blob VALUES (${count}, X'00'); COMMIT`,
+            )
+            const recording = await call("GET", "api/recordings/a.db")
+            const replay = await call("GET", "api/replay/a.db")
+            assertEquals([recording.body.inspection.messages, replay.body.streams[0].count], [count, count])
+        }
+        assertEquals(await Array.fromAsync(Deno.readDir(join(services.library.config.dataDir, "inspections"))), [])
+    } finally {
+        await closeAll()
+        writer.close()
+    }
 })
 
 Deno.test("api: an extra folder sent with the list: its rows, their actions by id, its status", async () => {

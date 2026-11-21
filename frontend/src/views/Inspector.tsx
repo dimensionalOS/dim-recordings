@@ -656,8 +656,6 @@ export function Inspector(
         setOverview(null)
         setTimeline(null)
         setError(null)
-        setNote(recording.note)
-        setSaved(null)
         api.get(recording.id).then(
             (full) => live && setInspection(full.inspection),
             (e) => live && setError(String(e.message ?? e)),
@@ -676,7 +674,7 @@ export function Inspector(
         return () => {
             live = false
         }
-    }, [recording.id, recording.modified, recording.inspected])
+    }, [recording.id, recording.modified, recording.wal, recording.inspected])
     useEffect(() => {
         if (!saved) {
             setNote(recording.note)

@@ -2,6 +2,7 @@
 // module's dimos.scene_data.v1 on /scene_data (only sent when asked: dim-controller's recorder asks when it records
 // /scene_info), built once; bodies that move (the scripted movers) follow their TF frames, and grassy height fields
 // grow blades.
+import { folderUrl } from "../folder_url.ts"
 import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { useLayer } from "dimos-react/three"
@@ -54,9 +55,11 @@ export function useRecordingScene(overview: Overview): { scene: SceneData | null
         }
         let gone = false
         fetch(
-            `api/replay/${encodeURIComponent(overview.id)}/message?stream=${encodeURIComponent(stream.name)}&t=${
-                overview.end - overview.start
-            }`,
+            folderUrl(
+                `api/replay/${encodeURIComponent(overview.id)}/message?stream=${encodeURIComponent(stream.name)}&t=${
+                    overview.end - overview.start
+                }`,
+            ),
         )
             .then((response) => (response.ok ? response.json() : null))
             .then((body) => {

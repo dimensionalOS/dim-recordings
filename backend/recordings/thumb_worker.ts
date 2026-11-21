@@ -126,7 +126,7 @@ export class Thumbnailer {
 
     /** Builds the next missing preview; false when there's nothing to do. */
     async #one(): Promise<boolean> {
-        const library = (await this.library.files()).filter((file) => file.format !== "rrd")
+        const library = (await this.library.files(this.library.watchedDirs)).filter((file) => file.format !== "rrd")
         // newest first: what the user just recorded is what they look for
         library.sort((a, b) => b.modified - a.modified)
         for (const file of [...this.extra(), ...library]) {

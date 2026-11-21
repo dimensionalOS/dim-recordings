@@ -1,5 +1,6 @@
 // Every route the backend serves, by module. `routes` is also served as openapi.json, and dimos.yaml's `provides:`
 // repeats it (`deno task check-endpoints` keeps the two in step; CI runs it).
+import { cleanDirs } from "./recordings/library.ts"
 import type { Info, Route } from "./http.ts"
 import { driveRoutes } from "./recordings/drive_routes.ts"
 import { recordingRoutes, type Services } from "./recordings/routes.ts"
@@ -17,5 +18,13 @@ export const INFO: Info = {
 }
 
 export function buildRoutes(services: Services): Route[] {
-    return [...recordingRoutes(services), ...driveRoutes(services), ...replayRoutes(services)]
+    return [...recordingRoutes(services), ...driveRoutes(services), ...replayRoutes(services)].map((route) => ({
+        ...route,
+        handler: (args, request) => {
+            const run = () => route.handler(args, request)
+            return args.viewFolders === undefined
+                ? run()
+                : services.library.withFolders(cleanDirs(args.viewFolders), run)
+        },
+    }))
 }

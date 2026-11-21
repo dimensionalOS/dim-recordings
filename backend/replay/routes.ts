@@ -269,7 +269,8 @@ export function replayRoutes({ library }: Services): Route[] {
             description:
                 "The playback stream (a websocket the page opens): it sends {op:sub, id, stream, as: lcm | image | cloud | " +
                 "header} and {op:at, t, mode: play | scrub | pause, seq}; the backend answers with what each stream has at " +
-                "the playhead (binary: u32 header length, JSON header, payload) and {op:done, seq}",
+                "the playhead (binary: u32 header length, JSON header, payload) and {op:done, seq}. A checksum failure " +
+                "sends {op:damaged, error}, including on connection when the damage is already known",
             params: ID,
             handler: async ({ id }, request) => {
                 if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
@@ -280,7 +281,10 @@ export function replayRoutes({ library }: Services): Route[] {
                 const { socket, response } = Deno.upgradeWebSocket(request)
                 socket.binaryType = "arraybuffer"
                 const send = (data: Uint8Array | string) => {
-                    if (socket.readyState === WebSocket.OPEN) {
+                    if (socket.readyState === WebSocket.CONNECTING) {
+                        // A shared source can already be damaged when the session is created, before the upgrade opens.
+                        socket.addEventListener("open", () => send(data), { once: true })
+                    } else if (socket.readyState === WebSocket.OPEN) {
                         socket.send(data as Uint8Array<ArrayBuffer> | string)
                     }
                 }

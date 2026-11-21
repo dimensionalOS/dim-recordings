@@ -1,32 +1,6 @@
-// The extra folders to scan besides Desktop's recordings folder: kept only in this page's localStorage (Settings
-// edits them) and sent to the backend with each list (GET api/recordings?extraDirs=…) and at start (PUT api/extra-dirs).
+// Settings and the library share this browser's saved folders.
 import { useEffect, useState } from "react"
-
-const KEY = "dim-recordings.extraDirs"
-
-export function readExtraDirs(): string[] {
-    try {
-        const saved = JSON.parse(localStorage.getItem(KEY) ?? "[]")
-        return Array.isArray(saved) ? cleanDirs(saved) : []
-    } catch {
-        return [] // storage blocked or garbled: just the shared folder
-    }
-}
-
-function writeExtraDirs(dirs: string[]) {
-    try {
-        localStorage.setItem(KEY, JSON.stringify(dirs))
-    } catch {
-        // storage blocked (a private window): the list lasts while this page does
-    }
-}
-
-/** As the backend's cleanDirs (library.ts) keeps them, so the page can tell when a list answers the one it sent. */
-export function cleanDirs(list: unknown[]): string[] {
-    const dirs = list.filter((dir): dir is string => typeof dir === "string")
-        .map((dir) => dir.trim().replace(/(.)\/+$/, "$1"))
-    return [...new Set(dirs.filter(Boolean))].slice(0, 64)
-}
+import { cleanDirs, KEY, readExtraDirs, writeExtraDirs } from "./folder_url.ts"
 
 /** The list, kept in step with this app's other windows. */
 export function useExtraDirs(): [string[], (dirs: string[]) => void] {

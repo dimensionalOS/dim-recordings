@@ -87,6 +87,7 @@ async function startBackground() {
         }
         services.thumbnails.poke()
     }
+    if (services.library.watchedDirs.length) services.library.onExtraDirs(services.library.watchedDirs)
     if (!Deno.args.includes("--no-thumbnails")) {
         services.thumbnails.start()
     }

@@ -3,6 +3,7 @@
 // on /file_request and they're answered on /file_info or any topic under it; dim-controller's recorder asks for every
 // mesh its URDF names and keeps each answer under its own topic, so every file_info stream is read, once, two at a time.
 // Older recordings' urdf_info and mesh_info (shape_msgs.MeshFile, the same bytes) are read when the new names are absent.
+import { folderUrl } from "../folder_url.ts"
 import { useEffect, useMemo, useState } from "react"
 import type * as THREE from "three"
 import type { Overview } from "./api.ts"
@@ -42,7 +43,7 @@ export function useRecordingUrdf(overview: Overview): RecordingUrdf {
         const url = `api/replay/${encodeURIComponent(overview.id)}/message?stream=${
             encodeURIComponent(stream.name)
         }&t=${overview.end - overview.start}`
-        fetch(url)
+        fetch(folderUrl(url))
             .then((response) => (response.ok ? response.json() : null))
             .then((body) => !gone && typeof body?.message?.data === "string" && setXml(body.message.data))
             .catch(() => {})
@@ -80,9 +81,11 @@ export function useRecordingUrdf(overview: Overview): RecordingUrdf {
             while (!gone && next < messages.length && [...wanted].some((uri) => !geometries.has(uri))) {
                 const { stream, index } = messages[next++]
                 const response = await fetch(
-                    `api/replay/${encodeURIComponent(overview.id)}/raw?stream=${
-                        encodeURIComponent(stream)
-                    }&index=${index}`,
+                    folderUrl(
+                        `api/replay/${encodeURIComponent(overview.id)}/raw?stream=${
+                            encodeURIComponent(stream)
+                        }&index=${index}`,
+                    ),
                 )
                 if (gone || !response.ok) {
                     continue

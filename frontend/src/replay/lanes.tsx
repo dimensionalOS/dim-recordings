@@ -1,6 +1,7 @@
 // The playback bar's lanes: a row per stream with a tick wherever it has messages (exact times when it's small, else
 // the backend's per-slice counts for the window on show), a switch that draws or hides it, and a menu that renames,
 // duplicates or deletes it in the file.
+import { folderUrl } from "../folder_url.ts"
 import { useEffect, useState } from "react"
 import { type PlaybackLane, Toggle, useConfirm, usePrompt, useToast } from "dimos-react"
 import { dimosKey } from "dimos-react"
@@ -48,7 +49,9 @@ export function useStreamLanes(
         let gone = false
         const timer = setTimeout(() => {
             fetch(
-                `api/replay/${encodeURIComponent(overview.id)}/timeline?bins=1500&from=${view.from}&to=${view.to}`,
+                folderUrl(
+                    `api/replay/${encodeURIComponent(overview.id)}/timeline?bins=1500&from=${view.from}&to=${view.to}`,
+                ),
             ).then((response) => response.json()).then((data) => !gone && setRows(data)).catch(() => {})
         }, 120)
         return () => {

@@ -61,6 +61,41 @@ Deno.test("api: list → summary → note → rename → duplicate → delete", 
     assert(await Deno.stat(join(dir, "b.db")))
 })
 
+Deno.test("api: malformed ids and unusable recording names give client errors before changing a file", async () => {
+    const { dir, call, services } = await app()
+    const malformed = await call("GET", "api/recordings/%FF")
+    assertEquals(malformed.status, 400)
+    assertEquals(malformed.body, { error: "the path isn't valid percent-encoding" })
+    assertEquals((await call("GET", "api/recordings/%FF/unknown")).status, 404)
+
+    const stick = await tempDir()
+    const path = join(stick, "drive.db")
+    await Deno.copyFile(join(dir, "a.db"), path)
+    await services.drives.scan(stick)
+    for (
+        const [endpoint, args] of [
+            ["api/recordings/a.db/rename", { name: null }],
+            ["api/recordings/a.db/duplicate", { name: "" }],
+            ["api/drives/rename", { path, name: ".hidden" }],
+            ["api/drives/transfer", { paths: [path], name: "   " }],
+        ] as const
+    ) {
+        const refused = await call("POST", endpoint, args)
+        assertEquals(refused.status, 400, endpoint)
+        assert(refused.body.error.includes("file name"))
+    }
+    assertEquals(services.transfers.transfers.size, 0)
+    assertEquals((await Array.fromAsync(Deno.readDir(dir))).map((e) => e.name), ["a.db"])
+    assertEquals((await Array.fromAsync(Deno.readDir(stick))).map((e) => e.name), ["drive.db"])
+
+    await Deno.writeFile(join(dir, "taken.db-wal"), new Uint8Array(1))
+    for (const action of ["rename", "duplicate"]) {
+        assertEquals((await call("POST", `api/recordings/a.db/${action}`, { name: "taken" })).status, 409)
+    }
+    assertEquals((await call("POST", "api/recordings/a.db/rename", { name: "take two" })).body.id, "take two.db")
+    assertEquals((await call("GET", "api/recordings/take%20two.db")).status, 200)
+})
+
 Deno.test("api: an extra folder sent with the list: its rows, their actions by id, its status", async () => {
     const { call } = await app()
     const extra = await tempDir()

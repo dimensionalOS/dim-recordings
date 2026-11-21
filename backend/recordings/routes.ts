@@ -204,7 +204,7 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             },
             handler: async ({ id, name }) => {
                 const recording = await find(String(id))
-                const target = await renameRecording(recording.path, String(name))
+                const target = await renameRecording(recording.path, name)
                 const newId = await library.idOf(target)
                 library.moveNote(recording.id, newId)
                 library.emit({ type: "recordings", reason: "rename", id: newId })
@@ -233,7 +233,7 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             params: { ...ID, name: { type: "string", description: 'the copy\'s name (default: "<name> copy")' } },
             handler: async ({ id, name }) => {
                 const recording = await find(String(id))
-                const target = await duplicateRecording(recording.path, name ? String(name) : undefined)
+                const target = await duplicateRecording(recording.path, name)
                 const newId = await library.idOf(target)
                 library.emit({ type: "recordings", reason: "duplicate", id: newId })
                 thumbnails.poke()

@@ -190,7 +190,7 @@ export function replayRoutes({ library }: Services): Route[] {
                 "each stream's message count per slice (ticks), plus its exact times when it has at most `exact` messages",
             params: {
                 ...ID,
-                bins: { type: "number", description: "slices (default 1200)" },
+                bins: { type: "number", description: "slices (10–5000, rounded down, default 1200)" },
                 exact: {
                     type: "number",
                     description:
@@ -207,7 +207,7 @@ export function replayRoutes({ library }: Services): Route[] {
             },
             handler: async ({ id, bins, exact, from, to }) => {
                 const recording = await find(String(id))
-                const slices = Math.max(10, Math.min(5000, Number(bins) || 1200))
+                const slices = Math.floor(Math.max(10, Math.min(5000, Number(bins) || 1200)))
                 const exactUpTo = Math.max(0, Math.min(20000, Number(exact ?? 2000)))
                 return await withSource(recording, async (source) => {
                     const all = await Promise.all(

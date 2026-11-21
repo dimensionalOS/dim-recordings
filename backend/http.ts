@@ -39,7 +39,7 @@ function match(route: Route, method: string, path: string): Record<string, strin
     for (let i = 0; i < want.length; i++) {
         const name = want[i].match(/^\{(.+)\}$/)?.[1]
         if (name) {
-            params[name] = decodeURIComponent(got[i])
+            params[name] = got[i]
         } else if (want[i] !== got[i]) {
             return null
         }
@@ -116,6 +116,13 @@ export async function handle(request: Request, routes: Route[], info: Info): Pro
         const pathParams = match(route, request.method, path)
         if (!pathParams) {
             continue
+        }
+        try {
+            for (const key of Object.keys(pathParams)) {
+                pathParams[key] = decodeURIComponent(pathParams[key])
+            }
+        } catch {
+            return Response.json({ error: "the path isn't valid percent-encoding" }, { status: 400 })
         }
         const args: Record<string, unknown> = { ...Object.fromEntries(url.searchParams), ...pathParams }
         if (request.method !== "GET" && request.method !== "DELETE") {

@@ -171,6 +171,8 @@ Deno.test("transfer: copy keeps the mtime, never overwrites, move deletes the so
     await Deno.utime(source, old, old)
     const progress: number[] = []
 
+    await assertRejects(() => transferFile(source, folder, { mode: "move", name: ".hidden" }), Error, "file name")
+    assertEquals(await Array.fromAsync(Deno.readDir(folder)), [])
     const first = await transferFile(source, folder, { mode: "copy", onProgress: ({ done }) => progress.push(done) })
     assertEquals(first, join(folder, "walk.mcap"))
     assertEquals(await Deno.readFile(first), bytes)

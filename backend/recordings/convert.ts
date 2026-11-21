@@ -2,6 +2,7 @@
 // progress from the converter's own output, the output's tail, the result's path. The new file lands next to the
 // original (an .rrd keeps the original's base name, so it lists paired with it).
 import { dirname, join } from "node:path"
+import { SIDECARS } from "./actions.ts"
 import { stem } from "./scan.ts"
 
 export type Target = "db" | "mcap" | "rrd"
@@ -138,9 +139,7 @@ export class Jobs {
             throw new Error(`can't convert a .${recording.format} to .${to}`)
         }
         const output = outputPath(recording.path, to)
-        const partial = to === "rrd"
-            ? null
-            : join(dirname(output), `.${output.slice(dirname(output).length + 1)}.partial`)
+        const partial = to === "rrd" ? null : join(dirname(output), `.${crypto.randomUUID()}.partial`)
         const verb = { db: ["to_db", recording.path, partial!], mcap: ["to_mcap", recording.path, "-o", partial!] }
         const args = to === "rrd" ? ["data", "to_rrd", recording.path, "--no-open"] : ["data", ...verb[to]]
         const id = crypto.randomUUID().slice(0, 8)
@@ -195,17 +194,10 @@ export class Jobs {
         }
         Promise.all([pump(process.stdout, true), pump(process.stderr, false), process.status]).then(
             async ([, , status]) => {
-                if (job.state === "cancelled") {
-                    if (partial) {
-                        await Deno.remove(partial).catch(() => {})
-                    }
-                } else if (!status.success) {
+                if (job.state !== "cancelled" && !status.success) {
                     job.state = "failed"
                     job.error = job.phase || `dtk exited ${status.code}`
-                    if (partial) {
-                        await Deno.remove(partial).catch(() => {})
-                    }
-                } else {
+                } else if (job.state !== "cancelled") {
                     try {
                         if (to === "rrd") {
                             // to_rrd keeps its .rrd in dtk's cache and prints its path last: it's moved out, not
@@ -226,6 +218,11 @@ export class Jobs {
                     } catch (error) {
                         job.state = "failed"
                         job.error = error instanceof Error ? error.message : String(error)
+                    }
+                }
+                if (partial && job.state !== "done") {
+                    for (const suffix of ["", ...SIDECARS]) {
+                        await Deno.remove(partial + suffix).catch(() => {})
                     }
                 }
                 job.finished = Date.now() / 1000

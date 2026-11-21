@@ -5,7 +5,7 @@ import { dirname, join } from "node:path"
 import { formatOfName, stem } from "./scan.ts"
 import { exists } from "./slow_fs.ts"
 
-const SIDECARS = ["-wal", "-shm", "-journal"]
+export const SIDECARS = ["-wal", "-shm", "-journal"]
 
 /** A file name that's safe in one folder: no separators, not hidden, not empty. */
 export function cleanName(name: string): string {

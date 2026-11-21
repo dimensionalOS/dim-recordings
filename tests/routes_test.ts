@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { handle } from "../backend/http.ts"
 import { buildRoutes, INFO } from "../backend/routes.ts"
 import { makeServices } from "../backend/services.ts"
-import { lcmTf, range, tempDir, writeDb } from "./fixtures.ts"
+import { lcmTf, range, tempDir, writeDb, writeMcap } from "./fixtures.ts"
 
 async function app() {
     const dir = await tempDir()
@@ -33,6 +33,44 @@ async function app() {
     }
     return { dir, call, services }
 }
+
+Deno.test("api: a failed or cancelled export removes its own SQLite sidecars", async () => {
+    const { call, dir, services } = await app()
+    await Deno.remove(join(dir, "a.db"))
+    await writeMcap(join(dir, "run.mcap"), [])
+    await Deno.writeTextFile(join(dir, ".run.db.partial-wal"), "another writer")
+    const script = join(await tempDir(), "converter.sh")
+    const previous = Deno.env.get("DIM_RECORDINGS_DTK")
+    try {
+        for (const cancel of [false, true]) {
+            await Deno.writeTextFile(
+                script,
+                `touch "$4-wal" "$4-shm"
+echo staged
+${cancel ? "exec sleep 10" : "exit 1"}`,
+            )
+            Deno.env.set("DIM_RECORDINGS_DTK", `sh ${script}`)
+            const staged = Promise.withResolvers<void>()
+            const finished = Promise.withResolvers<void>()
+            services.jobs.onChange = (job) => {
+                if (job.phase === "staged") staged.resolve()
+                if (job.finished !== null) finished.resolve()
+            }
+            const start = await call("POST", "api/recordings/run.mcap/convert", { to: "db" })
+            assertEquals(start.status, 200)
+            await staged.promise
+            if (cancel) await call("DELETE", `api/jobs/${start.body.id}`)
+            await finished.promise
+            assertEquals((await Array.fromAsync(Deno.readDir(dir))).map((file) => file.name).sort(), [
+                ".run.db.partial-wal",
+                "run.mcap",
+            ])
+        }
+    } finally {
+        if (previous === undefined) Deno.env.delete("DIM_RECORDINGS_DTK")
+        else Deno.env.set("DIM_RECORDINGS_DTK", previous)
+    }
+})
 
 Deno.test("api: list → summary → note → rename → duplicate → delete", async () => {
     const { dir, call } = await app()

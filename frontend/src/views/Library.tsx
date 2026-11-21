@@ -75,6 +75,7 @@ export function Library({ transfer = false }: { transfer?: boolean }) {
     const [onlyWarnings, setOnlyWarnings] = useState(false)
     const [jobs, setJobs] = useState<Record<string, Job>>({})
     const [deleting, setDeleting] = useState<Item[] | null>(null)
+    const [renaming, setRenaming] = useState<string[]>([])
     const [selected, setSelected] = useState<string | null>(null)
     // multi-select: null when off, else the ticked ids and the last one ticked (shift-click ranges from it)
     const [picking, setPicking] = useState<
@@ -354,12 +355,17 @@ export function Library({ transfer = false }: { transfer?: boolean }) {
         if (!base || base + extension === recording.name) {
             return
         }
-        api.rename(recording.id, base + extension).then((r) => {
-            toast.ok(`renamed to ${r.id}`)
-            if (selected === recording.id) {
-                setSelected(r.id)
-            }
-        }, fail)
+        setRenaming((ids) => [...ids, recording.id])
+        try {
+            const renamed = await api.rename(recording.id, base + extension)
+            toast.ok(`renamed to ${renamed.id}`)
+            setSelected((id) => id === recording.id ? renamed.id : id)
+            await refreshList()
+        } catch (error) {
+            fail(error)
+        } finally {
+            setRenaming((ids) => ids.filter((id) => id !== recording.id))
+        }
     }
     const copyPath = (recording: Item) => {
         navigator.clipboard.writeText(recording.path).then(
@@ -837,6 +843,7 @@ export function Library({ transfer = false }: { transfer?: boolean }) {
                         key={inspected.id}
                         recording={inspected}
                         actions={inspectorActions(inspected)}
+                        renaming={renaming.includes(inspected.id)}
                         upload={uploadsByPath.get(inspected.path)}
                         waitingForLogin={waitingForLogin}
                         jobs={Object.values(jobs)}

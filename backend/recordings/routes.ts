@@ -245,24 +245,20 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             path: "api/recordings/{id}/convert",
             description:
                 "Convert a .db or .mcap to another format with dtk (to = db | mcap | rrd); the new file lands next to it (an " +
-                ".rrd under the same name, so it lists with it). Returns a job; follow it with GET api/jobs/{job}",
+                ".rrd under the same name, so it lists with it). Returns a job; follow it with GET api/jobs/{job}. A busy destination returns 409",
             params: { ...ID, to: { type: "string", required: true, description: "db | mcap | rrd" } },
             handler: async ({ id, to }) => {
                 const recording = await find(String(id))
                 if (!["db", "mcap", "rrd"].includes(String(to))) {
                     throw new HttpError(400, "to must be db, mcap or rrd")
                 }
-                try {
-                    return jobs.convert({
-                        id: recording.id,
-                        path: recording.path,
-                        format: recording.format,
-                        messages: recording.inspection?.messages ?? 0,
-                        streams: recording.inspection?.streams.filter((s) => s.count > 0).length ?? 0,
-                    }, String(to) as Target)
-                } catch (error) {
-                    throw new HttpError(400, error instanceof Error ? error.message : String(error))
-                }
+                return jobs.convert({
+                    id: recording.id,
+                    path: recording.path,
+                    format: recording.format,
+                    messages: recording.inspection?.messages ?? 0,
+                    streams: recording.inspection?.streams.filter((s) => s.count > 0).length ?? 0,
+                }, String(to) as Target)
             },
         },
         {

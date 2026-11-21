@@ -1,7 +1,8 @@
 // Converting a recording to another format with dtk (`dtk data to_mcap | to_db | to_rrd`), as a job the page follows:
 // progress from the converter's own output, the output's tail, the result's path. The new file lands next to the
 // original (an .rrd keeps the original's base name, so it lists paired with it).
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
+import { HttpError } from "../http.ts"
 import { stem } from "./scan.ts"
 
 export type Target = "db" | "mcap" | "rrd"
@@ -101,6 +102,7 @@ export function progressOf(
 }
 
 export class Jobs {
+    #outputs = new Set<string>()
     jobs = new Map<string, Job & { process?: Deno.ChildProcess }>()
     onChange: (job: Job) => void = () => {}
 
@@ -135,9 +137,12 @@ export class Jobs {
     ): Job {
         const command = dtkCommand()
         if (recording.format === to || recording.format === "rrd") {
-            throw new Error(`can't convert a .${recording.format} to .${to}`)
+            throw new HttpError(400, `can't convert a .${recording.format} to .${to}`)
         }
         const output = outputPath(recording.path, to)
+        // A .db and its .mcap sibling share an .rrd. Case can name the same file; on case-sensitive volumes a retry waits.
+        const key = output.toLowerCase()
+        if (this.#outputs.has(key)) throw new HttpError(409, `a conversion is already writing ${basename(output)}`)
         const partial = to === "rrd"
             ? null
             : join(dirname(output), `.${output.slice(dirname(output).length + 1)}.partial`)
@@ -159,14 +164,22 @@ export class Jobs {
             started: Date.now() / 1000,
             finished: null,
         }
-        this.jobs.set(id, job)
-        const process = new Deno.Command(command[0], {
+        const converter = new Deno.Command(command[0], {
             args: [...command.slice(1), ...args],
             stdout: "piped",
             stderr: "piped",
             env: { NO_COLOR: "1" },
-        }).spawn()
+        })
+        let process: Deno.ChildProcess
+        this.#outputs.add(key)
+        try {
+            process = converter.spawn()
+        } catch (error) {
+            this.#outputs.delete(key)
+            throw error
+        }
         job.process = process
+        this.jobs.set(id, job)
         const seen = { streams: 0 }
         let lastStdout = ""
         const pump = async (stream: ReadableStream<Uint8Array>, isStdout: boolean) => {
@@ -231,7 +244,7 @@ export class Jobs {
                 job.finished = Date.now() / 1000
                 this.onChange(this.get(id)!)
             },
-        )
+        ).finally(() => this.#outputs.delete(key))
         return this.get(id)!
     }
 }

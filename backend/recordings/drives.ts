@@ -160,12 +160,14 @@ export async function scanDrive(root: string, maxDepth = 4, maxEntries = 20000):
                 if (stat.size === 0) {
                     continue // a recorder that's just opened it
                 }
+                const wal = format === "db" ? await fs.wal(path) : null
                 found.push({
                     id: path,
                     name: item.name,
                     format,
                     size: stat.size,
-                    modified: (stat.mtime ?? 0) / 1000,
+                    modified: Math.max((stat.mtime ?? 0) / 1000, wal?.modified ?? 0),
+                    ...(wal && { wal: wal.revision }),
                     path,
                     symlink: false,
                     relative,

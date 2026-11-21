@@ -72,6 +72,8 @@ async function realOf(path: string): Promise<string> {
 }
 
 export class Library {
+    // A live recorder can commit many times a second. Keep only its latest inspection, in memory.
+    #live = new Map<string, { revision: string; result: Inspection }>()
     #inspections = new Map<string, Inspection>()
     /** inspections queued or running (child_jobs.ts runs them one at a time per cost lane), by key */
     #pending = new Map<string, Promise<Inspection>>()
@@ -138,6 +140,13 @@ export class Library {
     /** The cached inspection, or null (and one is queued). */
     async cached(file: FileEntry): Promise<Inspection | null> {
         const key = Library.key(file)
+        if (file.wal) {
+            const live = this.#live.get(file.path)
+            if (live?.revision === file.wal) return live.result
+            if (!this.#pending.has(file.path)) this.#enqueue(file)
+            return null
+        }
+        this.#live.delete(file.path)
         const known = this.#inspections.get(key)
         if (known) {
             return known
@@ -154,7 +163,11 @@ export class Library {
 
     /** Waits for its inspection (queued if it wasn't). */
     async inspection(file: FileEntry): Promise<Inspection> {
-        return await this.cached(file) ?? await this.#enqueue(file)
+        const cached = await this.cached(file)
+        if (cached) return cached
+        const result = await this.#enqueue(file)
+        // A read already in flight for this path may have started before this request's commit.
+        return file.wal && this.#live.get(file.path)?.revision !== file.wal ? await this.#enqueue(file) : result
     }
 
     /** Settles once no inspection is queued or running (tests; a shutdown). */
@@ -165,7 +178,7 @@ export class Library {
     }
 
     #enqueue(file: FileEntry): Promise<Inspection> {
-        const key = Library.key(file)
+        const key = file.wal ? file.path : Library.key(file)
         let pending = this.#pending.get(key)
         if (!pending) {
             pending = this.#read(file).finally(() => this.#pending.delete(key))
@@ -198,8 +211,12 @@ export class Library {
                 error: error instanceof Error ? error.message : String(error),
             }
         }
-        this.#inspections.set(key, result)
-        await Deno.writeTextFile(await this.#diskPath(key), JSON.stringify(result))
+        if (file.wal) {
+            this.#live.set(file.path, { revision: file.wal, result })
+        } else {
+            this.#inspections.set(key, result)
+            await Deno.writeTextFile(await this.#diskPath(key), JSON.stringify(result))
+        }
         return result
     }
 

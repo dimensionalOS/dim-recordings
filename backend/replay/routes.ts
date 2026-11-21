@@ -45,6 +45,12 @@ export function replayRoutes({ library }: Services): Route[] {
     const thumbsByPath = new Map<string, Thumbs>()
     const thumbsFor = (recording: Recording, source: Source) => {
         let thumbs = thumbsByPath.get(recording.path)
+        if (recording.wal) {
+            // Scrub the live source directly instead of persisting a thumbnail track for every commit.
+            thumbs?.stop()
+            thumbsByPath.delete(recording.path)
+            return null
+        }
         if (!thumbs || thumbs.source !== source) {
             thumbs?.stop()
             const key = `${recording.format}-${recording.size}-${Math.round(recording.modified)}`

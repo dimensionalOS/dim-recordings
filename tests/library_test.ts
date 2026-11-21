@@ -2,7 +2,8 @@
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert"
 import { join } from "node:path"
 import { deleteRecording, duplicateRecording, renameRecording } from "../backend/recordings/actions.ts"
-import { conversions, DTK_COMMIT, DTK_URL, dtkCommand } from "../backend/recordings/convert.ts"
+import { conversions, DTK_COMMIT, DTK_URL, dtkCommand, Jobs } from "../backend/recordings/convert.ts"
+import { transferFile } from "../backend/recordings/transfer.ts"
 import { inspect, shortType, streamSummary } from "../backend/recordings/inspect.ts"
 import { cleanDirs, expandHome, Library } from "../backend/recordings/library.ts"
 import { pairRrds, resolveId, scanFiles } from "../backend/recordings/scan.ts"
@@ -176,6 +177,44 @@ for (const name of ["walk.db", "drive.mcap"]) {
     })
 }
 
+for (const action of ["duplicate", "import", "convert"]) {
+    Deno.test(`actions: a maximum-length filename can be staged for ${action}`, async () => {
+        const dir = await tempDir()
+        const name = "a".repeat(250) + ".mcap"
+        const src = join(dir, "run.mcap")
+        await writeMcap(src, [])
+        let result: string | null
+        if (action === "duplicate") {
+            result = await duplicateRecording(src, name)
+        } else if (action === "import") {
+            result = await transferFile(src, await tempDir(), { mode: "copy", name })
+        } else {
+            const input = join(dir, "a".repeat(250) + ".db")
+            const script = join(dir, "converter.sh")
+            await Deno.writeTextFile(script, 'cp "$0.mcap" "$5"')
+            await Deno.copyFile(src, script + ".mcap")
+            writeDb(join(dir, "input.db"), [])
+            await Deno.rename(join(dir, "input.db"), input)
+            const previous = Deno.env.get("DIM_RECORDINGS_DTK")
+            const jobs = new Jobs()
+            const done = Promise.withResolvers<string | null>()
+            jobs.onChange = (job) => {
+                if (job.finished !== null) done.resolve(job.result)
+            }
+            try {
+                Deno.env.set("DIM_RECORDINGS_DTK", `sh ${script}`)
+                jobs.convert({ id: "input", path: input, format: "db", messages: 0, streams: 0 }, "mcap")
+                result = await done.promise
+            } finally {
+                if (previous === undefined) Deno.env.delete("DIM_RECORDINGS_DTK")
+                else Deno.env.set("DIM_RECORDINGS_DTK", previous)
+            }
+        }
+        assertEquals(result?.split("/").pop(), name)
+        assertEquals(await Deno.readFile(result!), await Deno.readFile(src))
+    })
+}
+
 Deno.test("delete on a symlink removes the link, never the target", async () => {
     const dir = await folder()
     const elsewhere = await tempDir()
@@ -254,4 +293,19 @@ Deno.test("conversions run the pinned dtk commit on this deno, unless DIM_RECORD
             Deno.env.set("DIM_RECORDINGS_DTK", saved)
         }
     }
+})
+
+Deno.test("actions: a failed long-name SQLite duplicate cleans up before retry", async () => {
+    const dir = await tempDir()
+    const source = join(dir, "trip.db")
+    await Deno.writeTextFile(source, "database")
+    await Deno.writeTextFile(source + "-wal", "recent pages")
+    // The base fits, but the WAL name would exceed the filesystem's component limit.
+    await assertRejects(() => duplicateRecording(source, "x".repeat(252) + ".db"))
+    assertEquals((await Array.fromAsync(Deno.readDir(dir))).map((entry) => entry.name).sort(), [
+        "trip.db",
+        "trip.db-wal",
+    ])
+    const copy = await duplicateRecording(source, "retry")
+    assertEquals(await Deno.readTextFile(copy + "-wal"), "recent pages")
 })

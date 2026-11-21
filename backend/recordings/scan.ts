@@ -34,6 +34,11 @@ export function formatOfName(name: string): Format | null {
     return FORMATS.find((format) => format === extension) ?? null
 }
 
+/** A hidden sibling for publishing a completed recording without extending its final filename. */
+export function stagingPath(folder: string): string {
+    return join(folder, `.${crypto.randomUUID()}.partial`)
+}
+
 /** go2_short.db → go2_short */
 export function stem(name: string): string {
     return name.replace(/\.(db|mcap|rrd)$/i, "")

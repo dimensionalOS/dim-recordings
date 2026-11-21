@@ -2,7 +2,7 @@
 // rename takes the .rrd files made from it along (so they stay paired). A symlinked recording is a link: rename and
 // delete act on the link, never on what it points to. Tests: actions_test.ts.
 import { dirname, join } from "node:path"
-import { formatOfName, stem } from "./scan.ts"
+import { formatOfName, stagingPath, stem } from "./scan.ts"
 import { exists } from "./slow_fs.ts"
 
 const SIDECARS = ["-wal", "-shm", "-journal"]
@@ -104,12 +104,22 @@ export async function duplicateRecording(path: string, name?: string): Promise<s
     if (taken) {
         throw new Error(`${taken.slice(folder.length + 1)} already exists`)
     }
-    const partial = `${folder}/.${target.slice(folder.length + 1)}.partial`
-    await Deno.copyFile(path, partial)
-    // a .db mid-write keeps recent pages in its WAL; copy that too so the copy is the same recording
-    if (await exists(`${path}-wal`)) {
-        await Deno.copyFile(`${path}-wal`, `${target}-wal`)
+    const partial = stagingPath(folder)
+    const created = [partial]
+    try {
+        await Deno.copyFile(path, partial)
+        // A live .db needs its WAL next to the copy before the base is published.
+        if (await exists(`${path}-wal`)) {
+            const wal = `${target}-wal`
+            const reserved = await Deno.open(wal, { createNew: true, write: true })
+            reserved.close()
+            created.push(wal)
+            await Deno.copyFile(`${path}-wal`, wal)
+        }
+        await Deno.rename(partial, target)
+        return target
+    } catch (error) {
+        for (const file of created) await Deno.remove(file).catch(() => {})
+        throw error
     }
-    await Deno.rename(partial, target)
-    return target
 }

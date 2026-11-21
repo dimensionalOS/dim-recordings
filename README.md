@@ -36,7 +36,9 @@ dimos-desktop install https://github.com/dimensionalOS/dim-recordings
   a file is uploaded, its button becomes a link). An upload keeps the recording's topic summary (each stream's name,
   type, count, first and last time; `upload_summaries.json` in the data dir); once the summary differs, the row says
   "changed since" and Re-upload sends it as `name.v2.mcap` (then v3, ...; a `name.v2` goes up as v3) through a symlink
-  by that name, leaving the earlier upload. An unchanged one re-uploads from ⋯ after a confirm.
+  by that name, leaving the earlier upload. An unchanged one re-uploads from ⋯ after a confirm. Rerun exports keep
+  existing JPEG frames and encode supported 8-bit images as JPEG. Encoding uses a temporary database snapshot. Open
+  recordings with 16-bit depth in Replayer to keep their original precision.
 
 - **Replayer** (`#/replay/<id>`): [dimos-react](https://github.com/dimensionalOS/dimos-react)'s 3D view (the
   Controller's: 3D with point clouds, poses and the odometry route, camera panels, the tf tree, layers) playing the
@@ -98,6 +100,8 @@ deno bundle --platform deno --external "node:*" --external ./vendor/zenoh-gatewa
 ```
 
 Converting runs dtk at a pinned commit (`DTK_COMMIT` in `backend/recordings/convert.ts`, fetched by deno on first use;
-`DIM_RECORDINGS_DTK="deno run -A <checkout>/main.js"` overrides it); previews need ffmpeg (the nix build brings it).
+`DIM_RECORDINGS_DTK="deno run -A <checkout>/main.js"` overrides it). For Rerun exports, the selected dtk command
+receives the prepared recording after its camera frames have been checked. Previews need ffmpeg (the nix build brings
+it).
 
 Licensed under Apache-2.0.

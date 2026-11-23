@@ -308,7 +308,7 @@ export const api = {
                 show,
             },
         ),
-    reveal: (id: string) => call("POST", `api/recordings/${enc(id)}/reveal`, {}),
+    reveal: (id: string) => call<{ folder: string }>("POST", `api/recordings/${enc(id)}/reveal`, {}),
     upload: (id: string) => call<Upload>("POST", `api/recordings/${enc(id)}/upload`, {}),
     reupload: (id: string, force = false) =>
         call<Upload & { name: string }>("POST", `api/recordings/${enc(id)}/reupload`, { force }),

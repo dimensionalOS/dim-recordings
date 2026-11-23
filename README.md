@@ -1,6 +1,6 @@
 # dim-recordings
 
-A [dimOS Desktop](https://github.com/jeff-hykin/dimos-desktop) app for the robot recordings in dimos's recordings
+A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop-releases) app for the robot recordings in dimos's recordings
 folder: memory2 `.db` files, `.mcap` files, and the Rerun `.rrd` files made from them.
 
 Which folder that is comes from the dimos gateway (`GET /gateways/dimos/history/recordings` → `{path}`), the one

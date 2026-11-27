@@ -1,7 +1,7 @@
 // The selected recording, right of the list: its actions (Replay first; the rest in ⋯ on a narrow pane) and name, a
 // big preview that cycles its camera streams and its odometry path from above, the facts with its notes under them,
 // and Streams (with each stream's coverage over time) / TF frames / Warnings tabs.
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import {
     Alert,
     Badge,
@@ -626,13 +626,14 @@ function WarningList(
 type Tab = "streams" | "tf" | "warnings"
 
 export function Inspector(
-    { recording, actions, upload, waitingForLogin, jobs, version, onBack }: {
+    { recording, actions, upload, waitingForLogin, jobs, version, renaming, onBack }: {
         recording: Recording
         actions: InspectorActions
         upload: Upload | undefined
         waitingForLogin: boolean
         jobs: Job[]
         version: number
+        renaming: boolean
         onBack: () => void
     },
 ) {
@@ -641,12 +642,10 @@ export function Inspector(
     const [timeline, setTimeline] = useState<Timeline | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [tab, setTab] = useState<Tab>("streams")
-    const [note, setNote] = useState(recording.note)
+    const [note, setNote] = useState(() => api.noteText(recording))
     /** "saved", "saving…", or "failed – waiting for reconnect" */
     const [saved, setSaved] = useState<string | null>(null)
-    const noteTimer = useRef<number | undefined>(undefined)
-    // a retry still waiting stops with the Inspector
-    useEffect(() => () => clearTimeout(noteTimer.current), [])
+    useEffect(() => () => api.leaveNote(recording.id), [recording.id])
     const narrow = useMediaQuery("(max-width: 1100px)")
     const phone = useMediaQuery("(max-width: 760px)")
 
@@ -656,8 +655,6 @@ export function Inspector(
         setOverview(null)
         setTimeline(null)
         setError(null)
-        setNote(recording.note)
-        setSaved(null)
         api.get(recording.id).then(
             (full) => live && setInspection(full.inspection),
             (e) => live && setError(String(e.message ?? e)),
@@ -678,27 +675,8 @@ export function Inspector(
         }
     }, [recording.id, recording.modified, recording.inspected])
     useEffect(() => {
-        if (!saved) {
-            setNote(recording.note)
-        }
-    }, [recording.note])
-
-    // a save that fails is tried again until it lands, unless a newer edit replaces it first
-    const saveNote = (text: string, wait = 500) => {
-        clearTimeout(noteTimer.current)
-        if (wait === 500) {
-            setSaved("saving…")
-        }
-        noteTimer.current = setTimeout(() => {
-            api.setNote(recording.id, text).then(
-                () => setSaved("saved"),
-                () => {
-                    setSaved("failed – waiting for reconnect")
-                    saveNote(text, 3000)
-                },
-            )
-        }, wait)
-    }
+        setNote(api.noteText(recording))
+    }, [recording])
 
     const busy = upload?.state === "queued" || upload?.state === "uploading"
     const link = upload?.state === "done" ? upload.link : recording.uploaded?.link
@@ -936,10 +914,11 @@ export function Inspector(
                             rows={3}
                             placeholder="What's in this recording?"
                             value={note}
+                            readOnly={renaming}
                             data-testid="notes"
                             onChange={(text: string) => {
                                 setNote(text)
-                                saveNote(text)
+                                api.setNote(recording.id, text, setSaved)
                             }}
                         />
                     </div>

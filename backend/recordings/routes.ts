@@ -7,6 +7,8 @@ import { conversions, Jobs, type Target } from "./convert.ts"
 import { which } from "./foxglove.ts"
 import type { Transfers } from "./drive_routes.ts"
 import type { Drives } from "./drives.ts"
+import { channelType, shortType } from "./inspect.ts"
+import { openMcap } from "./mcap.ts"
 import { cleanDirs, Library, NotFound, type Recording } from "./library.ts"
 import { environment, openIn, type OpenTarget, openTargets, reveal } from "./open.ts"
 import { type Order, sections, type SortKey } from "./sort.ts"
@@ -14,6 +16,20 @@ import { Thumbnailer } from "./thumb_worker.ts"
 import { ffmpeg } from "./thumbnails.ts"
 import { topicSummary } from "./reupload.ts"
 import { type Uploaded, Uploads } from "./uploads.ts"
+
+/** A converter can consume an MCAP with no camera channels directly, including one with no channels at all. */
+async function mcapHasImages(path: string) {
+    const { reader, close } = await openMcap(path)
+    try {
+        return [...reader.channelsById.values()].some((channel) => {
+            const schema = reader.schemasById.get(channel.schemaId)
+            const type = channel.messageEncoding === "lcm" ? channel.metadata.get("lcm_type") : undefined
+            return /(^|\.)(CompressedImage|Image)$/.test(shortType(type ?? channelType(schema, channel.metadata)))
+        })
+    } finally {
+        close()
+    }
+}
 
 export type Services = {
     library: Library
@@ -257,6 +273,8 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
                         id: recording.id,
                         path: recording.path,
                         format: recording.format,
+                        prepareImages: to === "rrd" &&
+                            (recording.format !== "mcap" || await mcapHasImages(recording.path)),
                         messages: recording.inspection?.messages ?? 0,
                         streams: recording.inspection?.streams.filter((s) => s.count > 0).length ?? 0,
                     }, String(to) as Target)

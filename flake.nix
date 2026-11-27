@@ -119,7 +119,7 @@
                         # dim-app's zenoh.js (vendored for checkTopic) lazily imports the browser's zenoh-gateway client; a backend never does
                         deno bundle --frozen --node-modules-dir=manual --platform deno --external "node:*" --external ./vendor/zenoh-gateway/zenoh_gateway.js -o server.js backend/main.ts
                     '';
-                    installPhase = "mkdir $out && cp server.js $out/server.js";
+                    installPhase = "mkdir $out && cp server.js backend/recordings/to_rrd.ts $out/";
                 };
                 dimosApp = pkgs.writeTextFile {
                     name = "dim-recordings";

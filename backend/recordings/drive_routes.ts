@@ -2,7 +2,7 @@
 // as jobs the page follows (events {type: "transfer", transfer}).
 import { basename, dirname } from "node:path"
 import { HttpError, type Route } from "../http.ts"
-import { renameRecording } from "./actions.ts"
+import { cleanName, renameRecording } from "./actions.ts"
 import type { DriveFile, Drives } from "./drives.ts"
 import type { Library } from "./library.ts"
 import type { Thumbnailer } from "./thumb_worker.ts"
@@ -34,11 +34,12 @@ export class Transfers {
     }
 
     /** Queues one file (they run one at a time: a stick reads fastest that way). */
-    start(file: DriveFile, mode: "copy" | "move", name?: string): Transfer {
+    start(file: DriveFile, mode: "copy" | "move", name?: unknown): Transfer {
+        const newName = name === undefined ? undefined : cleanName(name)
         const transfer: Transfer = {
             id: `t${this.#next++}`,
             source: file.path,
-            name: name ?? file.name,
+            name: newName ?? file.name,
             mode,
             state: "queued",
             done: 0,
@@ -48,11 +49,11 @@ export class Transfers {
         }
         this.transfers.set(transfer.id, transfer)
         this.#changed(transfer)
-        this.#queue = this.#queue.then(() => this.#run(transfer, file))
+        this.#queue = this.#queue.then(() => this.#run(transfer, file, newName))
         return transfer
     }
 
-    async #run(transfer: Transfer, file: DriveFile) {
+    async #run(transfer: Transfer, file: DriveFile, name?: string) {
         if (this.#cancelled.has(transfer.id)) {
             return
         }
@@ -62,7 +63,7 @@ export class Transfers {
         try {
             const target = await transferFile(file.path, this.library.dir, {
                 mode: transfer.mode,
-                name: transfer.name,
+                name,
                 cancel: () => this.#cancelled.has(transfer.id),
                 onProgress: ({ done, total }) => {
                     transfer.done = done
@@ -198,7 +199,7 @@ export function driveRoutes(
                         } GB free in ${library.dir}`,
                     )
                 }
-                return { transfers: files.map((file) => transfers.start(file, how, name ? String(name) : undefined)) }
+                return { transfers: files.map((file) => transfers.start(file, how, name)) }
             },
         },
         {
@@ -224,7 +225,7 @@ export function driveRoutes(
             },
             handler: async ({ path, name }) => {
                 const file = find(path)
-                const target = await renameRecording(file.path, String(name))
+                const target = await renameRecording(file.path, name)
                 await drives.scan(file.drive)
                 drives.onChange()
                 return { ok: true, path: target, name: basename(target), folder: dirname(target) }

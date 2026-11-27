@@ -509,7 +509,7 @@ provides:
                       in: query
                       schema:
                           type: number
-                      description: slices (default 1200)
+                      description: slices (10–5000, rounded down, default 1200)
                     - name: exact
                       in: query
                       schema:

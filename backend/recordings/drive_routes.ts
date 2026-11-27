@@ -74,7 +74,7 @@ export class Transfers {
                 },
             })
             transfer.state = "done"
-            transfer.result = target.slice(this.library.dir.length + 1)
+            transfer.result = basename(target)
             this.library.emit({ type: "recordings", reason: "transfer", id: transfer.result })
         } catch (error) {
             transfer.state = this.#cancelled.has(transfer.id) ? "cancelled" : "failed"

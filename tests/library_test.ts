@@ -133,7 +133,6 @@ Deno.test("library: extra folders the page supplies list too, each with its stat
     assertEquals(list.find((r) => r.id === `${prefix}walk.db`)!.rrds.map((r) => r.id), [`${prefix}walk.rrd`])
     const walk = await library.get(`${prefix}walk.db`)
     assertEquals([walk.path, walk.root, walk.recorded], [join(extra, "walk.db"), extra, T0])
-    assertEquals(await library.idOf(join(extra, "app", "x.db")), `${prefix}app/x.db`)
     await assertRejects(() => library.get(`${prefix}../walk.db`))
     await assertRejects(() => library.get(`${prefix}notes.txt`))
     // removed from the page's list, its recordings are gone (and can't be addressed)

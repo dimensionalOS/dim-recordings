@@ -2,7 +2,7 @@
 // progress from the converter's own output, the output's tail, the result's path. The new file lands next to the
 // original (an .rrd keeps the original's base name, so it lists paired with it).
 import { dirname, join } from "node:path"
-import { stem } from "./scan.ts"
+import { stagingPath, stem } from "./scan.ts"
 
 export type Target = "db" | "mcap" | "rrd"
 
@@ -138,9 +138,7 @@ export class Jobs {
             throw new Error(`can't convert a .${recording.format} to .${to}`)
         }
         const output = outputPath(recording.path, to)
-        const partial = to === "rrd"
-            ? null
-            : join(dirname(output), `.${output.slice(dirname(output).length + 1)}.partial`)
+        const partial = to === "rrd" ? null : stagingPath(dirname(output))
         const verb = { db: ["to_db", recording.path, partial!], mcap: ["to_mcap", recording.path, "-o", partial!] }
         const args = to === "rrd" ? ["data", "to_rrd", recording.path, "--no-open"] : ["data", ...verb[to]]
         const id = crypto.randomUUID().slice(0, 8)

@@ -4,7 +4,7 @@
 // inspection (cached by format + size + mtime) come along. A .db's SQLite sidecars travel with it.
 import { basename, join } from "node:path"
 import { takenBy } from "./actions.ts"
-import { stem } from "./scan.ts"
+import { stagingPath, stem } from "./scan.ts"
 import { exists, fs, reachable } from "./slow_fs.ts"
 
 const SIDECARS = ["-wal", "-shm"]
@@ -113,7 +113,8 @@ export async function transferFile(
         )
     }
     const target = await uniqueTarget(dir, options.name ?? basename(source))
-    const temporary = (part: string) => join(dir, `.${basename(target)}${part.slice(source.length)}.transferring`)
+    const partial = stagingPath(dir)
+    const temporary = (part: string) => partial + part.slice(source.length)
     let done = 0
     const cancel = options.cancel ?? (() => false)
     /** what this import has put in place, to take back if a later part fails */

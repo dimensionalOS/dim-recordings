@@ -530,7 +530,8 @@ provides:
                 description: >-
                     The playback stream (a websocket the page opens): it sends {op:sub, id, stream, as: lcm | image | cloud
                     | header} and {op:at, t, mode: play | scrub | pause, seq}; the backend answers with what each stream has
-                    at the playhead (binary: u32 header length, JSON header, payload) and {op:done, seq}
+                    at the playhead (binary: u32 header length, JSON header, payload) and {op:done, seq}. A checksum failure
+                    sends {op:damaged, error}, including on connection when the damage is already known
                 parameters:
                     - name: id
                       in: path

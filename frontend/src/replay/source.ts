@@ -4,6 +4,7 @@
 // the playhead, not the wall. The page owns the playhead: each animation frame it tells the backend where it is (`at`)
 // and in which mode (play / scrub / pause), one request in flight at a time. Backend events (frontendtopics) still come
 // from Desktop's zenoh-gateway.
+import { folderUrl } from "../folder_url.ts"
 import { dimosKey, type FrontendMessage, keyMatches, parseKey, zenohSource } from "dimos-react"
 import { Store, type TypedStore } from "./store.ts"
 import { replayApi } from "./api.ts"
@@ -246,7 +247,7 @@ export class ReplaySource {
 
     #open() {
         const url = new URL(
-            `api/replay/${encodeURIComponent(this.recordingId)}/ws`,
+            folderUrl(`api/replay/${encodeURIComponent(this.recordingId)}/ws`),
             location.href,
         )
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:"

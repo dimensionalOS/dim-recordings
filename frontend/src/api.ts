@@ -1,3 +1,4 @@
+import { folderUrl } from "./folder_url.ts"
 // The app's backend (relative URLs: the page lives at Desktop's /apps/<name>/) and the shapes it returns.
 
 export type StreamInfo = {
@@ -258,7 +259,7 @@ async function call<T>(
     path: string,
     body?: unknown,
 ): Promise<T> {
-    const response = await fetch(path, {
+    const response = await fetch(path.startsWith("api/recordings/") ? folderUrl(path) : path, {
         method,
         headers: body === undefined ? {} : { "content-type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -282,16 +283,13 @@ const enc = encodeURIComponent
 
 export const api = {
     listUrl: (sort: SortKey, order: Order, extraDirs: string[]) =>
-        `api/recordings?sort=${sort}&order=${order}&tz=${new Date().getTimezoneOffset()}&extraDirs=${
-            enc(JSON.stringify(extraDirs))
-        }`,
-    setExtraDirs: (dirs: string[]) => call<{ extraDirs: ExtraDir[] }>("PUT", "api/extra-dirs", { dirs }),
+        folderUrl(`api/recordings?sort=${sort}&order=${order}&tz=${new Date().getTimezoneOffset()}`, extraDirs),
     get: (id: string) =>
         call<Recording & { inspection: Inspection | null }>(
             "GET",
             `api/recordings/${enc(id)}`,
         ),
-    thumbnailUrl: (id: string, version: number) => `api/recordings/${enc(id)}/thumbnail?v=${version}`,
+    thumbnailUrl: (id: string, version: number) => folderUrl(`api/recordings/${enc(id)}/thumbnail?v=${version}`),
     setNote: (id: string, text: string) => call("PUT", `api/recordings/${enc(id)}/note`, { text }),
     rename: (id: string, name: string) => call<{ id: string }>("POST", `api/recordings/${enc(id)}/rename`, { name }),
     remove: (id: string) => call("DELETE", `api/recordings/${enc(id)}`),

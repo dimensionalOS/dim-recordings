@@ -50,7 +50,7 @@ import { openCloudLogin, UploadTray, useTray } from "./Uploads.tsx"
 import { Thumbnail } from "./Thumbnail.tsx"
 import { SettingsModal } from "./Settings.tsx"
 import { ScanBar, SkeletonRows } from "./Loading.tsx"
-import { folderName, useExtraDirs } from "../extra_dirs.ts"
+import { folderName } from "../extra_dirs.ts"
 
 const SORTS: { key: SortKey; order: Order; label: string }[] = [
     { key: "date", order: "desc", label: "Newest" },
@@ -64,7 +64,13 @@ export const fail = (error: unknown) => toast.error(String((error as Error)?.mes
 
 type Item = Recording | RrdFile
 
-export function Library({ transfer = false }: { transfer?: boolean }) {
+export function Library(
+    { transfer = false, extraDirs, setExtraDirs }: {
+        transfer?: boolean
+        extraDirs: string[]
+        setExtraDirs: (dirs: string[]) => void
+    },
+) {
     const [sorting, setSorting] = usePersistentState<
         { sort: SortKey; order: Order }
     >("dim-recordings.sorting", {
@@ -86,7 +92,6 @@ export function Library({ transfer = false }: { transfer?: boolean }) {
     const [trayOpen, setTrayOpen] = useState(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
     // the extra folders to scan (Settings; this page's localStorage only): the list's request carries them
-    const [extraDirs, setExtraDirs] = useExtraDirs()
     const [thumbVersion, setThumbVersion] = useState(1)
     const prompt = usePrompt()
     const confirm = useConfirm()

@@ -2,6 +2,7 @@
 import { assert, assertEquals } from "@std/assert"
 import { join } from "node:path"
 import { handle } from "../backend/http.ts"
+import { closeNow } from "../backend/replay/player.ts"
 import { buildRoutes, INFO } from "../backend/routes.ts"
 import { makeServices } from "../backend/services.ts"
 import { lcmTf, range, tempDir, writeDb } from "./fixtures.ts"
@@ -59,6 +60,38 @@ Deno.test("api: list → summary → note → rename → duplicate → delete", 
     assertEquals((await call("POST", "api/recordings/b.db/convert", { to: "zip" })).status, 400)
     assertEquals((await call("POST", "api/recordings/..%2Fx.db/rename", { name: "y" })).status, 404)
     assert(await Deno.stat(join(dir, "b.db")))
+})
+
+Deno.test("api: each page can act on its own extra recordings after another page lists", async () => {
+    const { dir, call } = await app()
+    const extra = await tempDir()
+    await Deno.copyFile(join(dir, "a.db"), join(extra, "trip.db"))
+    const folders = encodeURIComponent(JSON.stringify([extra]))
+    const list = await call("GET", `api/recordings?extraDirs=${folders}&viewFolders=${folders}`)
+    const id = encodeURIComponent(list.body.extraDirs[0].prefix + "trip.db")
+    await call("GET", "api/recordings?extraDirs=[]&viewFolders=[]")
+    assertEquals((await call("PUT", `api/recordings/${id}/note?viewFolders=${folders}`, { text: "trip" })).status, 200)
+    assertEquals((await call("GET", `api/recordings/${id}?viewFolders=[]`)).status, 404)
+    try {
+        assertEquals((await call("GET", `api/replay/${id}?viewFolders=${folders}`)).status, 200)
+    } finally {
+        await closeNow(join(extra, "trip.db"))
+    }
+})
+
+Deno.test("api: each page releases its own folder watch when disconnected", async () => {
+    const { services } = await app()
+    let watched: string[] = []
+    services.library.onExtraDirs = (dirs) => watched = dirs
+    const routes = buildRoutes(services)
+    const folder = await tempDir()
+    const url = "http://app/api/extra-dirs/watch?viewFolders=" + encodeURIComponent(JSON.stringify([folder]))
+    const first = (await handle(new Request(url), routes, INFO))!
+    const second = (await handle(new Request(url), routes, INFO))!
+    await first.body!.cancel()
+    assertEquals(watched, [folder])
+    await second.body!.cancel()
+    assertEquals(watched, [])
 })
 
 Deno.test("api: an extra folder sent with the list: its rows, their actions by id, its status", async () => {

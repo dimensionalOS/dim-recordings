@@ -1,4 +1,5 @@
 // The Replayer's endpoints (backend/replay/routes.ts).
+import { folderUrl } from "../folder_url.ts"
 import type { StreamInfo } from "./source.ts"
 
 export type Overview = {
@@ -32,7 +33,7 @@ async function call<T>(
     path: string,
     body?: unknown,
 ): Promise<T> {
-    const response = await fetch(path, {
+    const response = await fetch(folderUrl(path), {
         method,
         headers: body === undefined ? {} : { "content-type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -71,7 +72,7 @@ export const replayApi = {
         ),
     /** one camera frame at t seconds after the recording's start */
     frameUrl: (id: string, stream: string, t: number) =>
-        `api/replay/${enc(id)}/frame?stream=${enc(stream)}&t=${t.toFixed(2)}`,
+        folderUrl(`api/replay/${enc(id)}/frame?stream=${enc(stream)}&t=${t.toFixed(2)}`),
     renameStream: (id: string, stream: string, name: string) =>
         call<{ seconds: number }>(
             "POST",

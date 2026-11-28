@@ -1,5 +1,6 @@
 // The app's view of the recordings folder: the file list joined with each file's inspection (cached in memory and on
 // disk under the app data dir, keyed by format + size + mtime), notes, thumbnails and what can open it.
+import { AsyncLocalStorage } from "node:async_hooks"
 import { isAbsolute, join, relative } from "node:path"
 import type { Config } from "../config.ts"
 import { inChild, JobCancelled, laneFor } from "./child_jobs.ts"
@@ -77,8 +78,35 @@ export class Library {
     #pending = new Map<string, Promise<Inspection>>()
     #notes: Record<string, string> | null = null
     listeners = new Set<Listener>()
-    /** the extra folders the page sent last (with its list; in memory only: the page's localStorage is the record) */
-    extraDirs: string[] = []
+    #defaults: string[] = []
+    #view = new AsyncLocalStorage<string[]>()
+    #watching = new Set<string[]>()
+
+    get extraDirs() {
+        return this.#view.getStore() ?? this.#defaults
+    }
+
+    withFolders<T>(dirs: string[], action: () => T): T {
+        return this.#view.run(dirs, action)
+    }
+
+    get watchedDirs() {
+        return [
+            ...new Set([...this.#defaults, ...Array.from(this.#watching).flat()].map(expandHome).filter(isAbsolute)),
+        ]
+    }
+
+    /** Keep a page's folders watched as long as its event stream is open. */
+    watchFolders() {
+        const dirs = [...this.extraDirs]
+        this.#watching.add(dirs)
+        this.onExtraDirs(this.watchedDirs)
+        return () => {
+            this.#watching.delete(dirs)
+            this.onExtraDirs(this.watchedDirs)
+        }
+    }
+
     /** told the expanded paths whenever extraDirs changes (main.ts watches them) */
     onExtraDirs: (paths: string[]) => void = () => {}
 
@@ -101,11 +129,11 @@ export class Library {
     }
 
     setExtraDirs(dirs: string[]) {
-        if (JSON.stringify(dirs) === JSON.stringify(this.extraDirs)) {
+        if (this.#view.getStore() || JSON.stringify(dirs) === JSON.stringify(this.#defaults)) {
             return
         }
-        this.extraDirs = dirs
-        this.onExtraDirs(dirs.map(expandHome).filter((path) => isAbsolute(path)))
+        this.#defaults = dirs
+        this.onExtraDirs(this.watchedDirs)
     }
 
     /** The id a file at `path` has (after a rename or duplicate), in the shared folder or one of the extra ones. */

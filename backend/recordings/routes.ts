@@ -31,11 +31,14 @@ const ID = {
         description: "recording id: its path inside the recordings folder (.extra/<hash>/<path> for an extra folder's)",
     },
 }
+const VIEW_FOLDERS = {
+    type: "string",
+    description: "JSON array of extra folders for this request only; send it on list, recording and replay requests",
+}
 const EXTRA_DIRS = {
     type: "string",
     description:
-        "the extra folders to scan too, a JSON array of paths (~ is expanded); they stay the extra folders until the next " +
-        "call that gives them (the page keeps its list in its own storage and sends it with each list)",
+        "default extra folders, a JSON array of paths (~ is expanded); kept until the next unscoped call that changes them",
 }
 
 export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services): Route[] {
@@ -94,6 +97,7 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
                     description: "the viewer's Date.getTimezoneOffset() in minutes (for Today/Yesterday)",
                 },
                 extraDirs: EXTRA_DIRS,
+                viewFolders: VIEW_FOLDERS,
             },
             handler: async ({ sort, order, tz, extraDirs }) => {
                 if (extraDirs !== undefined) {
@@ -142,6 +146,24 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             handler: async ({ dirs }) => {
                 library.setExtraDirs(cleanDirs(dirs))
                 return { extraDirs: (await library.scan()).extraDirs }
+            },
+        },
+        {
+            method: "GET",
+            path: "api/extra-dirs/watch",
+            description: "Watch this page's extra folders for changes and previews while its event stream is open",
+            params: { viewFolders: { ...VIEW_FOLDERS, required: true } },
+            handler: () => {
+                const release = library.watchFolders()
+                const stream = new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode(": watching\n\n"))
+                    },
+                    cancel: release,
+                })
+                return new Response(stream, {
+                    headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
+                })
             },
         },
         {

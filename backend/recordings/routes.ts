@@ -55,14 +55,15 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
         uploaded: Record<string, Uploaded>,
         names: string[],
     ) => {
-        const { inspection, ...rest } = recording
+        const { inspection: attempt, ...rest } = recording
+        const inspection = attempt?.error ? null : attempt
         return {
             ...rest,
             messages: inspection?.messages ?? null,
             // how many things look wrong (the summary's warnings), for the list's flag; null until inspected
             warnings: inspection ? (inspection.warnings ?? []).length : null,
-            inspected: recording.format === "rrd" || !!inspection,
-            error: inspection?.error ?? null,
+            inspected: recording.format === "rrd" || !!attempt,
+            error: attempt?.error ?? null,
             thumbnail: await thumbnails.stateOf(recording),
             opens: openTargets(recording.format, inspection, env),
             conversions: conversions(recording.format),
@@ -148,7 +149,8 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             method: "GET",
             path: "api/recordings/{id}",
             description:
-                "One recording in full: the list fields plus its inspection: every stream's type, encoding, count, rate (hz), " +
+                "One recording in full. If inspection fails, error explains why and inspection and messages are null. " +
+                "A successful inspection includes every stream's type, encoding, count, rate (hz), " +
                 "p99 and largest gap, the tf frame tree (edges with rate and first/last time, roots, frames with two parents) " +
                 "— what `dtk data summary` prints — and warnings (kind, message, detail, stream/frame, at = seconds in): a " +
                 "broken tf tree (two parents, cycle, separate trees, a stream's frame tf never publishes, transforms that stop " +
@@ -158,10 +160,8 @@ export function recordingRoutes({ library, jobs, thumbnails, uploads }: Services
             handler: async ({ id }) => {
                 const recording = await find(String(id))
                 const env = await environment(library.config)
-                return {
-                    ...(await row(recording, env, await uploads.uploadedByPath(), await localNames())),
-                    inspection: recording.inspection,
-                }
+                const fields = await row(recording, env, await uploads.uploadedByPath(), await localNames())
+                return { ...fields, inspection: fields.error ? null : recording.inspection }
             },
         },
         {

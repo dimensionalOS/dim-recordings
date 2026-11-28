@@ -79,6 +79,39 @@ Deno.test("api: fresh Inspector and Replay requests see a live WAL commit", asyn
             assertEquals([recording.body.inspection.messages, replay.body.streams[0].count], [count, count])
         }
         assertEquals(await Array.fromAsync(Deno.readDir(join(services.library.config.dataDir, "inspections"))), [])
+        if (Deno.build.os !== "windows" && Deno.uid() !== 0) {
+            const shm = join(dir, "a.db-shm")
+            const mode = (await Deno.stat(shm)).mode!
+            writer.exec("BEGIN; INSERT INTO tf(ts) VALUES(1780000013); INSERT INTO tf_blob VALUES(13,X'00'); COMMIT")
+            await Deno.chmod(shm, 0)
+            try {
+                const unavailable = await call("GET", "api/recordings/a.db")
+                const list = await call("GET", "api/recordings")
+                const row = list.body.sections.flatMap((s: { recordings: { id: string }[] }) => s.recordings)
+                    .find((r: { id: string }) => r.id === "a.db")
+                assertEquals([list.status, unavailable.status], [200, 200])
+                assert(row)
+                assert(unavailable.body.error)
+                assertEquals([row.messages, row.warnings, row.error], [null, null, unavailable.body.error])
+                assertEquals([unavailable.body.messages, unavailable.body.inspection], [null, null])
+                const replay = await call("GET", "api/replay/a.db")
+                if (replay.status === 200) assertEquals(replay.body.streams[0].count, 13)
+                else assert(replay.body.error)
+            } finally {
+                await Deno.chmod(shm, mode & 0o777)
+                await services.library.idle()
+            }
+            const recovered = await call("GET", "api/recordings/a.db")
+            const replay = await call("GET", "api/replay/a.db")
+            assertEquals([recovered.body.error, recovered.body.inspection.messages, replay.body.streams[0].count], [
+                null,
+                13,
+                13,
+            ])
+            writeDb(join(dir, "empty.db"), [])
+            const empty = await call("GET", "api/recordings/empty.db")
+            assertEquals([empty.body.error, empty.body.messages, empty.body.inspection.messages], [null, 0, 0])
+        }
     } finally {
         await closeAll()
         writer.close()

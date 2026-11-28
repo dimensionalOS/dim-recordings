@@ -1,14 +1,15 @@
 export const KEY = "dim-recordings.extraDirs"
 
-let pageDirs: string[] = []
+let pageDirs: string[] | undefined
 
 export function readExtraDirs(): string[] {
     try {
         const saved = JSON.parse(localStorage.getItem(KEY) ?? "[]")
-        return Array.isArray(saved) ? cleanDirs(saved) : []
+        pageDirs = Array.isArray(saved) ? cleanDirs(saved) : []
     } catch {
-        return pageDirs // storage blocked: keep this page's selection
+        // Storage may be blocked. Keep this page's selection.
     }
+    return pageDirs ?? []
 }
 
 export function writeExtraDirs(dirs: string[]) {
@@ -31,5 +32,5 @@ export function cleanDirs(list: unknown[]): string[] {
 export function folderUrl(path: string, dirs?: string[]) {
     if (dirs === undefined && !("document" in globalThis)) return path
     return path + (path.includes("?") ? "&" : "?") + "viewFolders=" +
-        encodeURIComponent(JSON.stringify(dirs ?? readExtraDirs()))
+        encodeURIComponent(JSON.stringify(dirs ?? pageDirs ?? readExtraDirs()))
 }

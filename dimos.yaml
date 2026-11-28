@@ -230,7 +230,7 @@ provides:
             post:
                 description: >-
                     Convert a .db or .mcap to another format with dtk (to = db | mcap | rrd); the new file lands next to it
-                    (an .rrd under the same name, so it lists with it). Returns a job; follow it with GET api/jobs/{job}
+                    (an .rrd under the same name, so it lists with it). Returns a job; follow it with GET api/jobs/{job}. A busy destination returns 409
                 requestBody:
                     content:
                         application/json:

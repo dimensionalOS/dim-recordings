@@ -10,13 +10,7 @@ import { fs, reachable } from "./slow_fs.ts"
 export async function openDb(path: string): Promise<DatabaseSync> {
     const real = await fs.realPath(path)
     await reachable(real)
-    let walBytes = 0
-    try {
-        walBytes = (await fs.stat(`${real}-wal`)).size
-    } catch {
-        // no WAL
-    }
-    if (walBytes > 0) {
+    if (await fs.wal(real)) {
         return new DatabaseSync(real, { readOnly: true })
     }
     const uri = `file:${real.split("/").map(encodeURIComponent).join("/")}?immutable=1`

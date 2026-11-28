@@ -13,6 +13,8 @@ export type FileEntry = {
     size: number
     /** seconds since the epoch */
     modified: number
+    /** Revision of a nonempty SQLite write-ahead log. */
+    wal?: string
     path: string
     /** a symlink into somewhere else (read-only use: this app never renames or deletes through one) */
     symlink: boolean
@@ -72,12 +74,14 @@ async function entry(root: string, relative: string, idPrefix: string): Promise<
         if (!stat.isFile) {
             return null
         }
+        const wal = format === "db" ? await fs.wal(path) : null
         return {
             id: idPrefix + relative,
             name,
             format,
             size: stat.size,
-            modified: (stat.mtime ?? 0) / 1000,
+            modified: Math.max((stat.mtime ?? 0) / 1000, wal?.modified ?? 0),
+            ...(wal && { wal: wal.revision }),
             path,
             symlink: link.isSymlink,
         }

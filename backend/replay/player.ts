@@ -22,7 +22,7 @@ import { encode as lcmEncode, schemas } from "./lcm.ts"
 import { atOrBefore, openSource, type Source, type StreamMeta } from "./source.ts"
 import type { Thumbs } from "./thumbs.ts"
 import { isVideoType, VideoFrames } from "./video.ts"
-import { reachable } from "../recordings/slow_fs.ts"
+import { fs, reachable } from "../recordings/slow_fs.ts"
 
 export type Mode = "play" | "scrub" | "pause"
 /** how a subscription wants its messages: dimos LCM bytes, a decoded image, a decoded cloud, or only the header */
@@ -52,7 +52,8 @@ const open = new Map<string, Open>()
 async function identityOf(path: string): Promise<string> {
     await reachable(path)
     const stat = await Deno.stat(path)
-    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtime?.getTime()}`
+    const wal = path.toLowerCase().endsWith(".db") ? await fs.wal(path) : null
+    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtime?.getTime()}:${wal?.revision ?? ""}`
 }
 const IDLE_CLOSE_MS = 60_000
 
@@ -82,7 +83,9 @@ export async function acquire(
     if (!entry) {
         entry = { source: openSource(path), users: 0, tf: new Map(), identity }
         open.set(path, entry)
-        entry.source.catch(() => open.delete(path))
+        entry.source.catch(() => {
+            if (open.get(path) === entry) open.delete(path)
+        })
     }
     const mine = entry
     mine.users++

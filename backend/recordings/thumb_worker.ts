@@ -51,8 +51,11 @@ export class Thumbnailer {
 
     constructor(public library: Library) {}
 
-    async folder(file: Pick<FileEntry, "format" | "size" | "modified">) {
-        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(Library.key(file)))
+    async folder(file: FileEntry) {
+        const digest = await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(file.wal ? `live|${file.path}` : Library.key(file)),
+        )
         const hex = [...new Uint8Array(digest)].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("")
         return join(this.library.config.dataDir, "thumbs", hex)
     }
@@ -63,6 +66,9 @@ export class Thumbnailer {
         }
         const folder = await this.folder(file)
         try {
+            if (file.wal && await Deno.readTextFile(`${folder}.wal`).catch(() => "") !== file.wal) {
+                return { state: "pending" }
+            }
             const meta = JSON.parse(await Deno.readTextFile(join(folder, "meta.json"))) as ThumbMeta
             if (!current(meta)) {
                 return { state: "pending" }
@@ -85,6 +91,7 @@ export class Thumbnailer {
     }
 
     async sprite(file: FileEntry): Promise<Uint8Array> {
+        if (file.wal && (await this.stateOf(file)).state !== "ready") throw new Error("preview pending")
         return await Deno.readFile(join(await this.folder(file), "sprite.jpg"))
     }
 
@@ -137,6 +144,7 @@ export class Thumbnailer {
             this.current = file.id
             const started = performance.now()
             try {
+                if (file.wal) await Deno.remove(`${folder}.wal`).catch(() => {})
                 const inspection = await this.library.inspection(file)
                 const cameras = inspection.streams.some((s) => isCameraType(s.type) && s.count)
                 if (cameras && !ffmpeg()) {
@@ -184,6 +192,7 @@ export class Thumbnailer {
             } finally {
                 this.current = null
             }
+            if (file.wal) await Deno.writeTextFile(`${folder}.wal`, file.wal)
             this.library.emit({ type: "thumbnail", id: file.id })
             return true
         }

@@ -656,10 +656,12 @@ export function Inspector(
         setOverview(null)
         setTimeline(null)
         setError(null)
-        setNote(recording.note)
-        setSaved(null)
         api.get(recording.id).then(
-            (full) => live && setInspection(full.inspection),
+            (full) => {
+                if (!live) return
+                setInspection(full.error ? null : full.inspection)
+                setError(full.error)
+            },
             (e) => live && setError(String(e.message ?? e)),
         )
         // the stream kinds (the preview's cameras and pose streams), then their coverage: both read the file's index
@@ -676,7 +678,7 @@ export function Inspector(
         return () => {
             live = false
         }
-    }, [recording.id, recording.modified, recording.inspected])
+    }, [recording.id, recording.modified, recording.wal, recording.inspected])
     useEffect(() => {
         if (!saved) {
             setNote(recording.note)
@@ -705,8 +707,8 @@ export function Inspector(
     const warnings = inspection?.warnings ?? []
     // the list's row trails a fresh inspection by a refresh: the inspection's own numbers win
     const span = Math.max(0, recording.duration ?? inspection?.duration ?? 0)
-    const summary = recording.error ?? inspection?.error ?? recording.summary ??
-        inspection?.summary ?? null
+    const inspectionError = error ?? (inspection ? null : recording.error)
+    const summary = inspection?.summary ?? recording.summary
     const chips = sensorChips(overview)
     const running = jobs.filter((j) => j.recording === recording.id && j.state === "running")
     const uploadAction = link && !busy
@@ -763,7 +765,7 @@ export function Inspector(
                         </Text>
                         <div className="rec-row-flex">
                             <Text small muted>
-                                {recording.error || inspection?.error ? "unreadable" : summary ?? "reading…"}
+                                {inspectionError ? "unreadable" : summary ?? "reading…"}
                             </Text>
                             <Badge>.{recording.format}</Badge>
                             {recording.symlink && <Badge title="a symlink to a file elsewhere">link</Badge>}
@@ -892,7 +894,9 @@ export function Inspector(
                                 <span
                                     key="r"
                                     title={recording.recordedFrom === "mtime"
-                                        ? "the file's time (no timestamps inside)"
+                                        ? (inspectionError
+                                            ? "file modification time"
+                                            : "the file's time (no timestamps inside)")
                                         : "its first message"}
                                 >
                                     {new Date(recording.recorded * 1000).toLocaleString([], {
@@ -906,8 +910,9 @@ export function Inspector(
                             ],
                             [
                                 "Messages",
-                                (inspection?.messages ?? recording.messages)
-                                    ?.toLocaleString() ?? "…",
+                                inspectionError
+                                    ? "Unavailable"
+                                    : (inspection?.messages ?? recording.messages)?.toLocaleString() ?? "…",
                             ],
                             [
                                 "Sensors",
@@ -943,7 +948,7 @@ export function Inspector(
                             }}
                         />
                     </div>
-                    {!inspection ? <Text small muted>{error ?? "reading…"}</Text> : warnings.length
+                    {!inspection ? <Text small muted>{inspectionError ?? "reading…"}</Text> : warnings.length
                         ? (
                             <>
                                 <WarningList warnings={warnings} limit={2} />
@@ -988,7 +993,7 @@ export function Inspector(
                 ]}
             />
             <div className="rec-pane">
-                {!inspection ? <Text small muted>{error ?? "reading…"}</Text> : tab === "streams"
+                {!inspection ? <Text small muted>{inspectionError ?? "reading…"}</Text> : tab === "streams"
                     ? (
                         <StreamsPane
                             inspection={inspection}

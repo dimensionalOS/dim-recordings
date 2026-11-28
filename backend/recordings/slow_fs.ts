@@ -46,6 +46,34 @@ const ops = {
     stat: async (path) => info(await Deno.stat(path)),
     lstat: async (path) => info(await Deno.lstat(path)),
     realPath: (path) => Deno.realPath(path),
+    async wal(path) {
+        const real = await Deno.realPath(path)
+        try {
+            const wal = await Deno.stat(real + "-wal")
+            if (!wal.isFile || !wal.size) return null
+            // SQLite can reuse WAL space after a checkpoint. Its wal-index header changes on each commit
+            // even when the length and filesystem timestamp do not. Read only the header, never lock the writer.
+            let index = "unavailable"
+            const header = new Uint8Array(48)
+            try {
+                if ((await Deno.stat(real + "-shm")).isFile) {
+                    const file = await Deno.open(real + "-shm")
+                    try {
+                        if (await file.read(header) === header.length) index = header.join(".")
+                    } finally { file.close() }
+                }
+            } catch {
+                // The wal-index is optional. Keep the recording visible using the WAL file metadata alone.
+            }
+            return {
+                revision: [wal.ino, wal.size, wal.mtime?.getTime(), index].join("-"),
+                modified: (wal.mtime?.getTime() ?? 0) / 1000,
+            }
+        } catch (error) {
+            if (error instanceof Deno.errors.NotFound) return null
+            throw error
+        }
+    },
     async probe(path) {
         (await Deno.open(path, { read: true })).close()
         return true
@@ -167,6 +195,8 @@ export const fs = {
     readDir: (path: string, ms?: number) => offThread<DirItem[]>("readDir", path, `listing ${path}`, ms),
     stat: (path: string, ms?: number) => offThread<FileInfo>("stat", path, `stat ${path}`, ms),
     lstat: (path: string, ms?: number) => offThread<FileInfo>("lstat", path, `lstat ${path}`, ms),
+    wal: (path: string) =>
+        offThread<{ revision: string; modified: number } | null>("wal", path, `stat WAL for ${path}`),
     realPath: (path: string, ms?: number) => offThread<string>("realPath", path, `resolving ${path}`, ms),
 }
 

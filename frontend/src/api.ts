@@ -164,6 +164,7 @@ export type Recording = {
     format: "db" | "mcap" | "rrd"
     size: number
     modified: number
+    wal?: string
     path: string
     symlink: boolean
     /** the extra folder (Settings) it was found in, as typed; absent for the shared recordings folder */

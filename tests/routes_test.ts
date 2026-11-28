@@ -103,6 +103,7 @@ Deno.test("api: a converter that cannot start leaves no running job", async () =
         const refused = await call("POST", "api/recordings/a.db/convert", { to: "mcap" })
         assertEquals((await call("GET", "api/jobs")).body.jobs, [])
         assertEquals(refused.status, 500)
+        assertEquals((await call("POST", "api/recordings/a.db/convert", { to: "mcap" })).status, 500)
         assert(refused.body.error.includes("missing-converter"))
         assertEquals((await call("POST", "api/recordings/a.db/convert", { to: "db" })).status, 400)
     } finally {
@@ -111,47 +112,75 @@ Deno.test("api: a converter that cannot start leaves no running job", async () =
     }
 })
 
-Deno.test("api: overlapping exports to one output return 409 until the first job finishes", async () => {
-    const { dir, call } = await app()
-    await writeMcap(join(dir, "A.mcap"), [])
-    const script = join(dir, "converter.sh")
-    await Deno.writeTextFile(
-        script,
-        `while [ ! -f "$0.go" ]; do sleep 0.02; done
-echo "$3" > "$3.tmp"
+for (const [firstStem, siblingStem] of [["café", "CAFE\u0301"], ["Straße", "STRASSE"], ["river", "hill"]]) {
+    Deno.test(`api: export ownership follows the filesystem for ${firstStem} and ${siblingStem}`, async () => {
+        const { dir, call, services } = await app()
+        const firstName = firstStem + ".db"
+        const siblingName = siblingStem + ".mcap"
+        await Deno.rename(join(dir, "a.db"), join(dir, firstName))
+        await writeMcap(join(dir, siblingName), [])
+        const prior = join(dir, firstStem + ".rrd")
+        await Deno.writeTextFile(prior, "previous export")
+        const source = await Deno.readFile(join(dir, firstName))
+        const alias = await Deno.stat(join(dir, siblingStem + ".rrd")).then(() => true, (error) => {
+            if (error instanceof Deno.errors.NotFound) return false
+            throw error
+        })
+        const script = join(dir, "converter.sh")
+        await Deno.writeTextFile(
+            script,
+            `while [ ! -f "$0.go" ]; do sleep 0.02; done
+if [ ! -f "$0.missing" ]; then echo "$3" > "$3.tmp"; fi
 echo "$3.tmp"
 `,
-    )
-    const convert = (id: string) => call("POST", `api/recordings/${id}/convert`, { to: "rrd" })
-    const finished = async (id: string) => {
-        for (let i = 0; i < 200; i++) {
-            const { body } = await call("GET", `api/jobs/${id}`)
-            if (body.finished != null) return body
-            await new Promise((resolve) => setTimeout(resolve, 20))
+        )
+        const convert = (id: string) => call("POST", `api/recordings/${encodeURIComponent(id)}/convert`, { to: "rrd" })
+        const finished = async (id: string) => {
+            for (let i = 0; i < 200; i++) {
+                const { body } = await call("GET", `api/jobs/${id}`)
+                if (body.finished !== null) return body
+                await new Promise((resolve) => setTimeout(resolve, 20))
+            }
+            throw new Error(`job ${id} did not finish`)
         }
-        throw new Error(`job ${id} did not finish`)
-    }
-    const previous = Deno.env.get("DIM_RECORDINGS_DTK")
-    Deno.env.set("DIM_RECORDINGS_DTK", `sh ${script}`)
-    try {
-        const first = await convert("a.db")
-        assertEquals(first.status, 200)
-        const duplicate = await convert("a.db")
-        const sibling = await convert("A.mcap")
-        await Deno.writeTextFile(`${script}.go`, "")
-        assertEquals((await finished(first.body.id)).state, "done")
-        for (const reply of [duplicate, sibling]) {
-            assertEquals(reply.status, 409)
-            assert(reply.body.error.toLowerCase().includes("a.rrd"))
+        const previous = Deno.env.get("DIM_RECORDINGS_DTK")
+        Deno.env.set("DIM_RECORDINGS_DTK", `sh ${script}`)
+        try {
+            const first = await convert(firstName)
+            assertEquals(first.status, 200)
+            const duplicate = await convert(firstName)
+            const sibling = await convert(siblingName)
+            assertEquals(await Deno.readTextFile(prior), "previous export")
+            await Deno.writeTextFile(script + ".go", "")
+            const winner = await finished(first.body.id)
+            const other = sibling.status === 200 ? await finished(sibling.body.id) : null
+            assertEquals(duplicate.status, 409)
+            assertEquals(sibling.status, alias ? 409 : 200)
+            assertEquals(winner.state, "done")
+            assertEquals((await Deno.readTextFile(winner.result)).trim(), join(dir, firstName))
+            if (other) {
+                assertEquals(other.state, "done")
+                assertEquals((await Deno.readTextFile(other.result)).trim(), join(dir, siblingName))
+            }
+            if (firstStem === "river") {
+                await Deno.writeTextFile(script + ".missing", "")
+                const failed = await convert(firstName)
+                assertEquals((await finished(failed.body.id)).state, "failed")
+                assertEquals((await Deno.readTextFile(prior)).trim(), join(dir, firstName))
+                await Deno.remove(script + ".missing")
+            }
+            const retryName = firstStem === "river" ? firstName : siblingName
+            const retry = await convert(retryName)
+            assertEquals(retry.status, 200)
+            const result = await finished(retry.body.id)
+            assertEquals(result.state, "done")
+            assertEquals((await Deno.readTextFile(result.result)).trim(), join(dir, retryName))
+            assertEquals(await Deno.readFile(join(dir, firstName)), source)
+        } finally {
+            await Deno.writeTextFile(script + ".go", "")
+            if (previous === undefined) Deno.env.delete("DIM_RECORDINGS_DTK")
+            else Deno.env.set("DIM_RECORDINGS_DTK", previous)
+            await services.library.idle()
         }
-        const retry = await convert("A.mcap")
-        assertEquals(retry.status, 200)
-        const result = await finished(retry.body.id)
-        assertEquals(result.state, "done")
-        assertEquals((await Deno.readTextFile(result.result)).trim(), join(dir, "A.mcap"))
-    } finally {
-        await Deno.writeTextFile(`${script}.go`, "")
-        if (previous === undefined) Deno.env.delete("DIM_RECORDINGS_DTK")
-        else Deno.env.set("DIM_RECORDINGS_DTK", previous)
-    }
-})
+    })
+}

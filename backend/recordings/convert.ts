@@ -1,6 +1,8 @@
 // Converting a recording to another format with dtk (`dtk data to_mcap | to_db | to_rrd`), as a job the page follows:
 // progress from the converter's own output, the output's tail, the result's path. The new file lands next to the
 // original (an .rrd keeps the original's base name, so it lists paired with it).
+import { rmdirSync } from "node:fs"
+import { rename } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { HttpError } from "../http.ts"
 import { stem } from "./scan.ts"
@@ -102,7 +104,8 @@ export function progressOf(
 }
 
 export class Jobs {
-    #outputs = new Set<string>()
+    // Each Jobs instance owns a hidden namespace on the destination filesystem.
+    #reservationFolder = `.dim-recordings-${crypto.randomUUID()}`
     jobs = new Map<string, Job & { process?: Deno.ChildProcess }>()
     onChange: (job: Job) => void = () => {}
 
@@ -140,9 +143,6 @@ export class Jobs {
             throw new HttpError(400, `can't convert a .${recording.format} to .${to}`)
         }
         const output = outputPath(recording.path, to)
-        // A .db and its .mcap sibling share an .rrd. Case can name the same file; on case-sensitive volumes a retry waits.
-        const key = output.toLowerCase()
-        if (this.#outputs.has(key)) throw new HttpError(409, `a conversion is already writing ${basename(output)}`)
         const partial = to === "rrd"
             ? null
             : join(dirname(output), `.${output.slice(dirname(output).length + 1)}.partial`)
@@ -171,11 +171,33 @@ export class Jobs {
             env: { NO_COLOR: "1" },
         })
         let process: Deno.ChildProcess
-        this.#outputs.add(key)
+        const folder = join(dirname(output), this.#reservationFolder)
+        const claim = join(folder, basename(output))
+        const removeEmptyFolder = () => {
+            try {
+                rmdirSync(folder)
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== "ENOTEMPTY") throw error
+            }
+        }
+        Deno.mkdirSync(folder, { recursive: true })
+        try {
+            Deno.mkdirSync(claim) // exclusive creation uses this volume's filename rules
+        } catch (error) {
+            if (error instanceof Deno.errors.AlreadyExists) {
+                throw new HttpError(409, `a conversion is already writing ${basename(output)}`)
+            }
+            removeEmptyFolder()
+            throw error
+        }
+        const release = () => {
+            Deno.removeSync(claim, { recursive: true })
+            removeEmptyFolder()
+        }
         try {
             process = converter.spawn()
         } catch (error) {
-            this.#outputs.delete(key)
+            release()
             throw error
         }
         job.process = process
@@ -223,12 +245,15 @@ export class Jobs {
                         if (to === "rrd") {
                             // to_rrd keeps its .rrd in dtk's cache and prints its path last: it's moved out, not
                             // copied, so a conversion leaves one .rrd on disk rather than two (dtk rebuilds a missing one)
-                            await Deno.remove(output).catch(() => {})
-                            await Deno.rename(lastStdout, output).catch(async () => {
-                                // another volume: copy, then drop the cache's
-                                await Deno.copyFile(lastStdout, output)
+                            try {
+                                await rename(lastStdout, output)
+                            } catch (error) {
+                                if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error
+                                const replacement = join(claim, "replacement")
+                                await Deno.copyFile(lastStdout, replacement)
+                                await Deno.rename(replacement, output)
                                 await Deno.remove(lastStdout).catch(() => {})
-                            })
+                            }
                         } else {
                             await Deno.rename(partial!, output)
                         }
@@ -241,10 +266,16 @@ export class Jobs {
                         job.error = error instanceof Error ? error.message : String(error)
                     }
                 }
-                job.finished = Date.now() / 1000
-                this.onChange(this.get(id)!)
             },
-        ).finally(() => this.#outputs.delete(key))
+        ).catch(async (error) => {
+            await process.status
+            job.state = "failed"
+            job.error = error instanceof Error ? error.message : String(error)
+        }).finally(() => {
+            release()
+            job.finished = Date.now() / 1000
+            this.onChange(this.get(id)!)
+        })
         return this.get(id)!
     }
 }
